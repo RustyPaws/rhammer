@@ -412,6 +412,15 @@ impl App {
             if rot {
                 painter.circle_stroke(r.center(), 3.0, Stroke::new(1.0, color));
             }
+            // Hammer-style dimensions: width above the box, height left of it
+            let s = b.1 - b.0;
+            let fmt = |v: f64| {
+                let v = v.abs();
+                if (v - v.round()).abs() < 0.005 { format!("{:.0}", v) } else { format!("{:.2}", v) }
+            };
+            let font = egui::FontId::monospace(11.0);
+            painter.text(r.center_top() - Vec2::new(0.0, 8.0), egui::Align2::CENTER_BOTTOM, fmt(s[ua]), font.clone(), color);
+            painter.text(r.left_center() - Vec2::new(8.0, 0.0), egui::Align2::RIGHT_CENTER, fmt(s[va]), font, color);
         };
 
         if self.tool == Tool::Select {
@@ -431,15 +440,6 @@ impl App {
                 let r = Rect::from_two_pos(pr.to_screen(b.0[ua], b.0[va]), pr.to_screen(b.1[ua], b.1[va]));
                 painter.rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(255, 255, 0, 20));
                 draw_handles(&painter, b, Color32::YELLOW, false);
-                // size label
-                let s = b.1 - b.0;
-                painter.text(
-                    r.center_bottom() + Vec2::new(0.0, 6.0),
-                    egui::Align2::CENTER_TOP,
-                    format!("{:.0} × {:.0}", s[ua].abs(), s[va].abs()),
-                    egui::FontId::monospace(11.0),
-                    Color32::YELLOW,
-                );
             }
         }
         if let Some(Drag::BoxSel { view: v, start, cur }) = &self.drag {
