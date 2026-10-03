@@ -83,11 +83,6 @@ pub fn entity_model(e: &Entity, fgd: &Fgd) -> Option<String> {
     Some(m.to_ascii_lowercase().replace('\\', "/"))
 }
 
-/// Does the FGD class declare an `origin` key (i.e. is it meant to have an origin)?
-pub fn class_has_origin(fgd: &Fgd, class: &str) -> bool {
-    fgd.get(class).is_some_and(|c| c.props.iter().any(|p| p.name.eq_ignore_ascii_case("origin")))
-}
-
 impl Doc {
     pub fn new(map: Map, path: Option<PathBuf>) -> Doc {
         let next_id = map.max_id();
@@ -499,36 +494,18 @@ impl Doc {
             Node::str("visgroupshown", "1"),
             Node::str("visgroupautoshown", "1"),
         ];
-        // like Hammer: only classes that declare an `origin` key get one, at the brushes' centre
-        if class_has_origin(fgd, class) {
-            if let Some(c) = self.solids_center(&e.solids) {
-                e.set_origin(geom::snap_near(c));
-            }
+        // origin defaults to the centre of the brushes
+        let (mut min, mut max) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
+        for g in e.solids.iter().filter_map(|s| self.geo.get(&s.id)).filter(|g| g.valid) {
+            min = min.min(g.min);
+            max = max.max(g.max);
+        }
+        if min.x <= max.x {
+            e.set_origin(geom::snap_near((min + max) * 0.5));
         }
         self.map.entities.push(e);
         self.touch();
         Some(id)
-    }
-
-    fn solids_center(&self, solids: &[Solid]) -> Option<DVec3> {
-        let (mut min, mut max) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
-        for g in solids.iter().filter_map(|s| self.geo.get(&s.id)).filter(|g| g.valid) {
-            min = min.min(g.min);
-            max = max.max(g.max);
-        }
-        (min.x <= max.x).then(|| (min + max) * 0.5)
-    }
-
-    /// After a class change: give a brush entity an origin (brush centre) if the new class
-    /// declares one and none is set yet.
-    pub fn default_brush_origin(&mut self, id: u32, fgd: &Fgd) {
-        let Some(e) = self.entity(id) else { return };
-        if e.solids.is_empty() || e.get("origin").is_some() || !class_has_origin(fgd, e.classname()) {
-            return;
-        }
-        if let Some(c) = self.solids_center(&e.solids) {
-            self.set_entity_origin(id, geom::snap_near(c));
-        }
     }
 
     /// Move solids from brush entities back to the world.
