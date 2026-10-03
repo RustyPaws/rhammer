@@ -6,7 +6,7 @@
 
 **rhammer** is a Valve Hammer-style level editor for Source engine maps, written in Rust with [egui](https://github.com/emilk/egui). It reads and writes `.vmf` files and uses Hammer-like game configurations (FGD entity definitions, compile tools), so it fits into the familiar Source mapping workflow.
 
-> Status: early development (`v0.1.0`). Expect rough edges.
+> Status: unstable. Expect rough edges.
 
 ## Features
 
@@ -59,24 +59,11 @@ sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev 
 
 ## Releases
 
-Pushing a tag like `v0.1.0` triggers the release workflow, which builds and publishes archives for:
+Pushing a tag like `vX.Y.Z` triggers the release workflow, which builds and publishes archives for:
 
 - Windows (amd64, aarch64)
 - macOS (aarch64)
 - Linux (amd64, aarch64)
-
-## Project layout
-
-| File | Purpose |
-|---|---|
-| `crates/kv` | KeyValues lexer (logos), parser with line/column errors, writer |
-| `crates/config` | Game configurations, compile settings, persisted settings, Hammer `GameConfig.txt` import |
-| `crates/formats` | VMF, FGD (logos lexer + parser) and VTF formats |
-| `crates/assets` | Game file system (loose files + VPK), materials, MDL models |
-| `crates/core` | UI-independent editor model: document, brush geometry, instances |
-| `crates/compile` | Map compilation pipeline (vbsp / vvis / vrad / launch) |
-| `src/app.rs`, `src/render3d.rs` | Application state, menus, hotkeys, OpenGL renderer |
-| `src/ui/` | Viewports, property editors, dialogs, model viewer |
 
 ## License
 
