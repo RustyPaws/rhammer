@@ -1,5 +1,5 @@
-use crate::{flag_str, get_string};
-use rhammer_kv::{Node, NodeList};
+use crate::config::{flag_str, get_string};
+use crate::kv::{Node, NodeList};
 
 /// Parameters of the "Run Map" dialog (per config).
 #[derive(Clone, Debug, PartialEq)]

@@ -1,8 +1,6 @@
-#![allow(dead_code)]
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
-mod app;
-mod render3d;
-mod ui;
+
+use rhammer::app::App;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -11,5 +9,5 @@ fn main() -> eframe::Result {
         multisampling: 0,
         ..Default::default()
     };
-    eframe::run_native("rhammer", options, Box::new(|cc| Ok(Box::new(app::App::new(cc)))))
+    eframe::run_native("rhammer", options, Box::new(|cc| Ok(Box::new(App::new(cc)))))
 }

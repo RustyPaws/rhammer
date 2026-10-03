@@ -1,8 +1,8 @@
 //! The four viewports: 3D perspective + Top/Front/Side orthographic views.
 
 use crate::app::*;
-use rhammer_core::doc::{Obj, Sel, Xform};
-use rhammer_core::geom;
+use crate::editor::doc::{Obj, Sel, Xform};
+use crate::editor::geom;
 use crate::render3d::{self, Batch, Vertex};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use glam::{DQuat, DVec3};
@@ -31,9 +31,9 @@ impl Proj {
     }
 }
 
-fn ent_color(e: &rhammer_formats::vmf::Entity, fgd: &rhammer_formats::fgd::Fgd) -> Color32 {
+fn ent_color(e: &crate::formats::vmf::Entity, fgd: &crate::formats::fgd::Fgd) -> Color32 {
     if let Some(c) = e.editor_str("color") {
-        if let Some(v) = rhammer_formats::vmf::parse_vec3(c) {
+        if let Some(v) = crate::formats::vmf::parse_vec3(c) {
             return Color32::from_rgb(v.x as u8, v.y as u8, v.z as u8);
         }
     }
@@ -281,7 +281,7 @@ impl App {
                 continue;
             }
             let selected = self.sel.contains(&id);
-            let (color, solids_ids, is_point, ent): (Color32, Vec<u32>, bool, Option<&rhammer_formats::vmf::Entity>) = match self.doc.index.get(&id) {
+            let (color, solids_ids, is_point, ent): (Color32, Vec<u32>, bool, Option<&crate::formats::vmf::Entity>) = match self.doc.index.get(&id) {
                 Some(Obj::WorldSolid(_)) => (sel_dim, vec![id], false, None),
                 Some(Obj::Entity(i)) => {
                     let e = &self.doc.map.entities[*i];
@@ -329,7 +329,7 @@ impl App {
                 // facing direction
                 if e.get("angles").is_some() && !self.inst.contains_key(&id) {
                     let ang = e.angles();
-                    let m = rhammer_core::doc::angles_matrix(ang);
+                    let m = crate::editor::doc::angles_matrix(ang);
                     let f = m * DVec3::X;
                     let c = r.center();
                     let len = (r.width().max(r.height()) * 0.8).clamp(10.0, 60.0);
@@ -843,7 +843,7 @@ impl App {
             .entities
             .iter()
             .filter(|e| e.solids.is_empty())
-            .filter_map(|e| rhammer_core::doc::entity_model(e, &self.fgd))
+            .filter_map(|e| crate::editor::doc::entity_model(e, &self.fgd))
             .collect();
         for p in paths {
             if !self.models.contains_key(&p) {
@@ -852,7 +852,7 @@ impl App {
                     continue;
                 }
                 self.model_budget -= 1;
-                let m = rhammer_assets::mdl::load(&self.mats.fs, &p).map(std::rc::Rc::new);
+                let m = crate::assets::mdl::load(&self.mats.fs, &p).map(std::rc::Rc::new);
                 self.models.insert(p.clone(), m);
             }
             if let Some(Some(m)) = self.models.get(&p) {
@@ -887,7 +887,7 @@ impl App {
         let mut out = HashMap::new();
         let mut bounds = HashMap::new();
         for (id, file, o, a) in jobs {
-            if let Some(g) = rhammer_core::instances::instance_geo(&mut self.inst_cache, &file, o, a, &dirs) {
+            if let Some(g) = crate::editor::instances::instance_geo(&mut self.inst_cache, &file, o, a, &dirs) {
                 bounds.insert(id, (g.min, g.max));
                 out.insert(id, g);
             }
@@ -909,7 +909,7 @@ impl App {
             }
             v
         };
-        let mut jobs: Vec<(Vec<rhammer_formats::vmf::Side>, Vec<Vec<DVec3>>, bool)> = Vec::new();
+        let mut jobs: Vec<(Vec<crate::formats::vmf::Side>, Vec<Vec<DVec3>>, bool)> = Vec::new();
         for (id, _) in &solids {
             if let (Some(Obj::WorldSolid(i)), Some(g)) = (self.doc.index.get(id), self.doc.geo.get(id)) {
                 jobs.push((self.doc.map.world.solids[*i].sides.clone(), g.polys.clone(), false));
@@ -924,7 +924,7 @@ impl App {
                 if self.inst.contains_key(&e.id) {
                     continue; // drawn through its instance geometry
                 }
-                if let Some(m) = rhammer_core::doc::entity_model(e, &self.fgd) {
+                if let Some(m) = crate::editor::doc::entity_model(e, &self.fgd) {
                     if let Some(Some(model)) = self.models.get(&m) {
                         if !model.parts.is_empty() {
                             continue; // drawn by rebuild_models
@@ -1031,7 +1031,7 @@ impl App {
     }
 
     /// Sequence shown for an entity: editor preview, then DefaultAnim, then the `sequence` key.
-    pub fn entity_sequence(&self, e: &rhammer_formats::vmf::Entity, m: &rhammer_assets::mdl::Model) -> usize {
+    pub fn entity_sequence(&self, e: &crate::formats::vmf::Entity, m: &crate::assets::mdl::Model) -> usize {
         if let Some(s) = self.anim_preview.get(&e.id).filter(|s| **s < m.sequences.len()) {
             return *s;
         }
@@ -1043,13 +1043,13 @@ impl App {
 
     /// Pose and batch the studio models of point entities.
     fn rebuild_models(&mut self) {
-        let mut jobs: Vec<(std::rc::Rc<rhammer_assets::mdl::Model>, DVec3, glam::DMat3, usize, f64, usize, f64)> = vec![];
+        let mut jobs: Vec<(std::rc::Rc<crate::assets::mdl::Model>, DVec3, glam::DMat3, usize, f64, usize, f64)> = vec![];
         let mut active = false;
         for e in &self.doc.map.entities {
             if !e.solids.is_empty() || self.doc.is_hidden(e.id) || self.inst.contains_key(&e.id) {
                 continue;
             }
-            let Some(path) = rhammer_core::doc::entity_model(e, &self.fgd) else { continue };
+            let Some(path) = crate::editor::doc::entity_model(e, &self.fgd) else { continue };
             let Some(Some(model)) = self.models.get(&path) else { continue };
             if model.parts.is_empty() {
                 continue;
@@ -1064,13 +1064,13 @@ impl App {
             };
             let skin: usize = e.get("skin").and_then(|s| s.parse().ok()).unwrap_or(0);
             let scale: f64 = e.get("modelscale").and_then(|s| s.parse().ok()).unwrap_or(1.0);
-            jobs.push((model.clone(), e.origin(), rhammer_core::doc::angles_matrix(e.angles()), skin, scale, seq, frame));
+            jobs.push((model.clone(), e.origin(), crate::editor::doc::angles_matrix(e.angles()), skin, scale, seq, frame));
         }
         self.anim_active = active;
         let mut batches: HashMap<String, Vec<Vertex>> = HashMap::new();
         for (model, origin, rot, skin, scale, seq, frame) in jobs {
             let posed;
-            let lists: Vec<&[rhammer_assets::mdl::ModelVert]> = if seq == 0 && frame == 0.0 {
+            let lists: Vec<&[crate::assets::mdl::ModelVert]> = if seq == 0 && frame == 0.0 {
                 model.parts.iter().map(|p| &p.verts[..]).collect()
             } else {
                 posed = model.posed(seq, frame);
@@ -1080,7 +1080,7 @@ impl App {
                 let mat = part.materials.get(skin).or(part.materials.first()).cloned().unwrap_or_default();
                 let (col, _) = self.material_color(&mat);
                 let out = batches.entry(mat.to_ascii_lowercase()).or_default();
-                let conv = |v: &rhammer_assets::mdl::ModelVert| {
+                let conv = |v: &crate::assets::mdl::ModelVert| {
                     let p = origin + rot * (DVec3::new(v.pos[0] as f64, v.pos[1] as f64, v.pos[2] as f64) * scale);
                     let n = rot * DVec3::new(v.nrm[0] as f64, v.nrm[1] as f64, v.nrm[2] as f64);
                     Vertex { pos: [p.x as f32, p.y as f32, p.z as f32], nrm: [n.x as f32, n.y as f32, n.z as f32], uv: v.uv, col }
@@ -1153,7 +1153,7 @@ impl App {
             }
         }
         if !self.faces.is_empty() {
-            let all: Vec<&rhammer_formats::vmf::Solid> = self.doc.map.world.solids.iter().chain(self.doc.map.entities.iter().flat_map(|e| e.solids.iter())).collect();
+            let all: Vec<&crate::formats::vmf::Solid> = self.doc.map.world.solids.iter().chain(self.doc.map.entities.iter().flat_map(|e| e.solids.iter())).collect();
             for s in all {
                 if let Some(g) = self.doc.geo.get(&s.id) {
                     for (sd, poly) in s.sides.iter().zip(&g.polys) {

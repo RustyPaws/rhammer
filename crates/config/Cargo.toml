@@ -1,9 +1,0 @@
-[package]
-name = "rhammer-config"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-
-[dependencies]
-rhammer-kv = { workspace = true }
-anyhow = { workspace = true }

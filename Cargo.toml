@@ -1,38 +1,14 @@
-[workspace]
-members = [".", "crates/*"]
-
-[workspace.package]
+[package]
+name = "rhammer"
 version = "0.1.0"
 edition = "2021"
 license = "MIT"
 
-[workspace.dependencies]
-rhammer-kv = { path = "crates/kv" }
-rhammer-config = { path = "crates/config" }
-rhammer-formats = { path = "crates/formats" }
-rhammer-assets = { path = "crates/assets" }
-rhammer-core = { path = "crates/core" }
-rhammer-compile = { path = "crates/compile" }
+[dependencies]
+eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+glam = "0.33"
 anyhow = "1"
 logos = "0.16"
-glam = "0.33"
-
-[package]
-name = "rhammer"
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-
-[dependencies]
-rhammer-kv = { workspace = true }
-rhammer-config = { workspace = true }
-rhammer-formats = { workspace = true }
-rhammer-assets = { workspace = true }
-rhammer-core = { workspace = true }
-rhammer-compile = { workspace = true }
-eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
-glam = { workspace = true }
-anyhow = { workspace = true }
 rfd = "0.15"
 
 [profile.dev]

@@ -1,13 +1,13 @@
 //! Application state, window chrome, menus, file operations and hotkeys.
 
-use rhammer_assets::Materials;
-use rhammer_compile::CompileJob;
-use rhammer_config::{GameConfig, Settings};
-use rhammer_core::doc::{Clipboard, Doc, Sel, Xform};
-use rhammer_formats::fgd::Fgd;
-use rhammer_core::geom::{self, Plane, Primitive};
+use crate::assets::Materials;
+use crate::compile::CompileJob;
+use crate::config::{GameConfig, Settings};
+use crate::editor::doc::{Clipboard, Doc, Sel, Xform};
+use crate::formats::fgd::Fgd;
+use crate::editor::geom::{self, Plane, Primitive};
 use crate::render3d::{Camera, SharedRef};
-use rhammer_formats::vmf::Map;
+use crate::formats::vmf::Map;
 use eframe::egui::{self, Align2, Color32, Key, RichText};
 use glam::{DQuat, DVec3};
 use std::collections::BTreeSet;
@@ -131,10 +131,10 @@ pub struct App {
     pub rot_mode: bool,
     pub paste_count: i32,
     pub show_entity_names: bool,
-    pub inst: std::collections::HashMap<u32, rhammer_core::instances::InstGeo>,
-    pub inst_cache: rhammer_core::instances::InstCache,
+    pub inst: std::collections::HashMap<u32, crate::editor::instances::InstGeo>,
+    pub inst_cache: crate::editor::instances::InstCache,
     pub inst_key: u64,
-    pub models: std::collections::HashMap<String, Option<std::rc::Rc<rhammer_assets::mdl::Model>>>,
+    pub models: std::collections::HashMap<String, Option<std::rc::Rc<crate::assets::mdl::Model>>>,
     pub model_budget: i32,
     pub model_starved: bool,
     pub models_key: u64,
@@ -388,10 +388,10 @@ impl App {
         self.doc.map.set_viewsetting("bSnapToGrid", if self.snap { "1" } else { "0" });
         self.doc.map.set_viewsetting("bShowGrid", if self.show_grid { "1" } else { "0" });
         if let Some(vi) = self.doc.map.header.iter_mut().find(|n| n.key.eq_ignore_ascii_case("versioninfo")) {
-            if let rhammer_kv::Value::Block(c) = &mut vi.value {
+            if let crate::kv::Value::Block(c) = &mut vi.value {
                 if let Some(mv) = c.iter_mut().find(|n| n.key == "mapversion") {
                     let v: i64 = mv.as_str().and_then(|s| s.parse().ok()).unwrap_or(0) + 1;
-                    mv.value = rhammer_kv::Value::Str(v.to_string());
+                    mv.value = crate::kv::Value::Str(v.to_string());
                     self.doc.map.world.set("mapversion", v.to_string());
                 }
             }
@@ -644,7 +644,7 @@ impl App {
         };
         self.settings.save();
         let ctx = self.ctx.clone();
-        self.compile = Some(rhammer_compile::start(g, self.settings.compile.clone(), p, move || ctx.request_repaint()));
+        self.compile = Some(crate::compile::start(g, self.settings.compile.clone(), p, move || ctx.request_repaint()));
         self.win.compile_log = true;
         self.win.run_map = false;
     }

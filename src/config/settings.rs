@@ -1,8 +1,8 @@
 //! Persisted application settings, stored in a KeyValues file (`rhammer_config.txt`)
 //! in the working directory.
 
-use crate::{get_string as s, import_hammer, CompileSettings, GameConfig};
-use rhammer_kv::{self as kv, Node, NodeList, Value};
+use crate::config::{get_string as s, import_hammer, CompileSettings, GameConfig};
+use crate::kv::{self as kv, Node, NodeList, Value};
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, Default)]

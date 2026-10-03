@@ -2427,63 +2427,8 @@ dependencies = [
  "anyhow",
  "eframe",
  "glam",
+ "logos",
  "rfd",
- "rhammer-assets",
- "rhammer-compile",
- "rhammer-config",
- "rhammer-core",
- "rhammer-formats",
- "rhammer-kv",
-]
-
-[[package]]
-name = "rhammer-assets"
-version = "0.1.0"
-dependencies = [
- "glam",
- "rhammer-formats",
- "rhammer-kv",
-]
-
-[[package]]
-name = "rhammer-compile"
-version = "0.1.0"
-dependencies = [
- "rhammer-config",
-]
-
-[[package]]
-name = "rhammer-config"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "rhammer-kv",
-]
-
-[[package]]
-name = "rhammer-core"
-version = "0.1.0"
-dependencies = [
- "glam",
- "rhammer-formats",
- "rhammer-kv",
-]
-
-[[package]]
-name = "rhammer-formats"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "glam",
- "logos",
- "rhammer-kv",
-]
-
-[[package]]
-name = "rhammer-kv"
-version = "0.1.0"
-dependencies = [
- "logos",
 ]
 
 [[package]]

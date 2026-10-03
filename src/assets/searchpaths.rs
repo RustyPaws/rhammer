@@ -1,7 +1,7 @@
 //! `gameinfo.txt` -> `FileSystem` -> `SearchPaths`: which directories and VPK archives a
 //! game mounts, in priority order (first entry wins).
 
-use rhammer_kv::{self as kv, NodeList, Value};
+use crate::kv::{self as kv, NodeList, Value};
 use std::path::{Path, PathBuf};
 
 /// One `SearchPaths` line before it is resolved against the disk.

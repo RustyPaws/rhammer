@@ -11,7 +11,7 @@ pub use game::GameConfig;
 pub use hammer::import_hammer;
 pub use settings::Settings;
 
-use rhammer_kv::{Node, NodeList};
+use crate::kv::{Node, NodeList};
 
 /// Read a string value from a KeyValues node list.
 pub(crate) fn get_string(nodes: &[Node], key: &str) -> Option<String> {

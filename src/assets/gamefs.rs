@@ -1,7 +1,7 @@
 //! Game file system: directories and VPK archives mounted from gameinfo `SearchPaths`.
 
-use crate::searchpaths::{self, Mount};
-use crate::vpk::Vpk;
+use crate::assets::searchpaths::{self, Mount};
+use crate::assets::vpk::Vpk;
 use std::path::{Path, PathBuf};
 
 /// A mounted source of files, searched in order.

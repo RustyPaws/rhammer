@@ -1,10 +1,10 @@
 //! Right-hand panel: object properties, texture browser / face editing, visgroups.
 
 use crate::app::*;
-use rhammer_core::doc::Sel;
-use rhammer_formats::fgd::{ClassKind, Prop};
-use rhammer_core::geom;
-use rhammer_formats::vmf::{self, Entity};
+use crate::editor::doc::Sel;
+use crate::formats::fgd::{ClassKind, Prop};
+use crate::editor::geom;
+use crate::formats::vmf::{self, Entity};
 use eframe::egui::{self, Color32, RichText};
 
 enum Edit {
@@ -312,7 +312,7 @@ impl App {
         }
 
         // model sequences / animation preview
-        let model = if e.solids.is_empty() { rhammer_core::doc::entity_model(e, &self.fgd).and_then(|p| self.models.get(&p).cloned().flatten()) } else { None };
+        let model = if e.solids.is_empty() { crate::editor::doc::entity_model(e, &self.fgd).and_then(|p| self.models.get(&p).cloned().flatten()) } else { None };
         if let Some(model) = model.filter(|m| !m.sequences.is_empty()) {
             egui::CollapsingHeader::new(format!("Model ({} sequences)", model.sequences.len())).id_salt("model_anim").default_open(true).show(ui, |ui| {
                 let cur = self.entity_sequence(e, &model);
@@ -543,7 +543,7 @@ impl App {
                         if let Some(c) = self.fgd.get(&v).and_then(|c| c.color) {
                             for id in targets {
                                 if let Some(en) = self.doc.entity_mut(*id) {
-                                    rhammer_core::doc::Doc::set_editor(&mut en.editor, "color", &format!("{} {} {}", c[0], c[1], c[2]));
+                                    crate::editor::doc::Doc::set_editor(&mut en.editor, "color", &format!("{} {} {}", c[0], c[1], c[2]));
                                 }
                             }
                         }
@@ -584,7 +584,7 @@ impl App {
         }
     }
 
-    fn for_each_face(&mut self, mut f: impl FnMut(&mut rhammer_formats::vmf::Side)) {
+    fn for_each_face(&mut self, mut f: impl FnMut(&mut crate::formats::vmf::Side)) {
         let faces = self.faces.clone();
         for s in self.doc.map.world.solids.iter_mut().chain(self.doc.map.entities.iter_mut().flat_map(|e| e.solids.iter_mut())) {
             for sd in &mut s.sides {

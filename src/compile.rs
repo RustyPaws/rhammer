@@ -1,6 +1,6 @@
 //! Map compilation: vbsp -> vvis -> vrad -> copy bsp -> launch game, run on a worker thread.
 
-use rhammer_config::{CompileSettings, GameConfig};
+use crate::config::{CompileSettings, GameConfig};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};

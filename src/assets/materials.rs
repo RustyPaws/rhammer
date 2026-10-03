@@ -1,8 +1,8 @@
 //! Material (VMT/VTF) cache feeding the 3D view and the texture browser.
 
-use crate::gamefs::GameFs;
-use rhammer_formats::vtf;
-use rhammer_kv::{self as kv, Node, Value};
+use crate::assets::gamefs::GameFs;
+use crate::formats::vtf;
+use crate::kv::{self as kv, Node, Value};
 use std::collections::HashMap;
 use std::path::Path;
 

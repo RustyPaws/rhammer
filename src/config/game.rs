@@ -1,5 +1,5 @@
-use crate::get_string as s;
-use rhammer_kv::Node;
+use crate::config::get_string as s;
+use crate::kv::Node;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug, PartialEq)]

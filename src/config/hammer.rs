@@ -1,7 +1,7 @@
 //! Import of Hammer's own `bin/GameConfig.txt`.
 
-use crate::{get_string, GameConfig};
-use rhammer_kv::{self as kv, NodeList, Value};
+use crate::config::{get_string, GameConfig};
+use crate::kv::{self as kv, NodeList, Value};
 use std::path::Path;
 
 /// Parse Hammer's `GameConfig.txt`.

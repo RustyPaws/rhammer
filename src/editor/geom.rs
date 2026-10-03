@@ -1,7 +1,7 @@
 //! Brush geometry. A solid is stored as a set of planes (VMF style); polygons are derived
 //! by clipping a huge quad on each plane by all the other planes.
 
-use rhammer_formats::vmf::{Side, Solid, TexAxis};
+use crate::formats::vmf::{Side, Solid, TexAxis};
 use glam::DVec3;
 
 pub const EPS: f64 = 0.01;
@@ -336,9 +336,9 @@ pub fn transform_solid(s: &mut Solid, f: &dyn Fn(DVec3) -> DVec3, rigid: Option<
         if let Some(d) = sd.dispinfo.as_mut() {
             for n in d.iter_mut() {
                 if n.key.eq_ignore_ascii_case("startposition") {
-                    if let rhammer_kv::Value::Str(s) = &mut n.value {
-                        if let Some(v) = rhammer_formats::vmf::parse_vec3(s) {
-                            *s = format!("[{}]", rhammer_formats::vmf::fmt_vec3(snap_near(f(v))));
+                    if let crate::kv::Value::Str(s) = &mut n.value {
+                        if let Some(v) = crate::formats::vmf::parse_vec3(s) {
+                            *s = format!("[{}]", crate::formats::vmf::fmt_vec3(snap_near(f(v))));
                         }
                     }
                 }

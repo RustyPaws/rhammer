@@ -1,9 +1,9 @@
 //! The open document: map + undo history + derived geometry + editing operations.
 
-use rhammer_formats::fgd::Fgd;
-use crate::geom::{self, Plane, SolidGeo};
-use rhammer_kv::{Node, NodeList, Value};
-use rhammer_formats::vmf::{fmt, fmt_vec3, Entity, Map, Solid};
+use crate::formats::fgd::Fgd;
+use crate::editor::geom::{self, Plane, SolidGeo};
+use crate::kv::{Node, NodeList, Value};
+use crate::formats::vmf::{fmt, fmt_vec3, Entity, Map, Solid};
 use glam::{DMat3, DQuat, DVec3};
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;

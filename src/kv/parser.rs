@@ -1,6 +1,6 @@
-use crate::error::{position, ParseError, ParseErrorKind};
-use crate::lexer::Tok;
-use crate::node::Node;
+use crate::kv::error::{position, ParseError, ParseErrorKind};
+use crate::kv::lexer::Tok;
+use crate::kv::node::Node;
 use logos::Logos;
 use std::ops::Range;
 
@@ -137,7 +137,7 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::node::{NodeList, Value};
+    use crate::kv::node::{NodeList, Value};
 
     #[test]
     fn nested_and_comments() {
@@ -184,7 +184,7 @@ b \"2\"").unwrap();
     fn roundtrip() {
         let src = "\"a\" \"1\"\nb\n{\n\t\"c\" \"d\"\n}\n";
         let n = parse(src).unwrap();
-        let again = parse(&crate::to_string(&n)).unwrap();
+        let again = parse(&crate::kv::to_string(&n)).unwrap();
         assert_eq!(n, again);
         assert!(matches!(n[1].value, Value::Block(_)));
     }

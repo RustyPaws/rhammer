@@ -1,8 +1,8 @@
 //! func_instance support: loads referenced VMFs and flattens their brush geometry into world space.
 
-use crate::doc::angles_matrix;
-use crate::geom::{Plane, SolidGeo};
-use rhammer_formats::vmf::{Map, Solid, TexAxis};
+use crate::editor::doc::angles_matrix;
+use crate::editor::geom::{Plane, SolidGeo};
+use crate::formats::vmf::{Map, Solid, TexAxis};
 use glam::{DMat3, DVec3};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
