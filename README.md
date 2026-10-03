@@ -14,6 +14,8 @@
 - **Hammer-style game configurations** – modelled after Hammer's `GameConfig.txt` (Options → Game configurations). Configs are stored in `rhammer_config.txt` and can be imported from Hammer's own `bin/GameConfig.txt`.
 - **FGD parser** – entity classes, properties, choices, spawnflags and I/O.
 - **I/O graph view** – visualize entity connections (inputs/outputs) as a graph.
+- **Angles editor and direction arrows** – pitch/yaw/roll editor with a yaw dial and Up/Down/compass presets (also for `movedir`); selected entities show their direction arrow in 2D views.
+- **Origin editing** – drag the origin marker of a selected brush entity in 2D views; new brush entities get their origin at the centre of their brushes.
 - **Editing tools** – Select, Block, Entity, Clip and Texture application tools, plus Transform, Make hollow, Tie to entity, Move to world, Rotate and Mirror, texture lock, and undo/redo.
 - **2D and 3D viewports** – 4-view layout, grid, wireframe mode, entity names, frame selection / frame all, Hammer-style selection/block dimensions in 2D views, selected objects drawn on top.
 - **Asset loading** – game files are mounted from the `SearchPaths` of `gameinfo.txt`; VPK archives, VTF textures (including transparent textures flagged in VMT), and MDL models (with VVD/VTX/ANI).
