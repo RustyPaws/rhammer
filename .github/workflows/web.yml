@@ -41,7 +41,7 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/v')
         run: |
           name="rhammer-${{ github.ref_name }}-web"
-          cp -r dist "$name"
+          trunk build --release --locked --public-url ./ --dist "$name"
           zip -r "$name.zip" "$name"
       - uses: actions/upload-pages-artifact@v3
         with:

@@ -98,6 +98,7 @@ pub struct App {
     pub doc: Doc,
     pub fgd: Fgd,
     pub vfs: crate::platform::SharedVfs,
+    pub vpks: crate::assets::gamefs::VpkCache,
     /// Browser file access (the same object as `vfs`, with the folder picker).
     #[cfg(feature = "web")]
     pub web: crate::platform::WebFs,
@@ -218,7 +219,8 @@ impl App {
         let vfs: crate::platform::SharedVfs = std::rc::Rc::new(web.clone());
         #[cfg(feature = "web")]
         web.set_ctx(cc.egui_ctx.clone());
-        let (fgd, mats) = load_game_data(&vfs, settings.active_game());
+        let vpks = crate::assets::gamefs::VpkCache::default();
+        let (fgd, mats) = load_game_data(&vfs, &vpks, settings.active_game());
         let shared: SharedRef = Default::default();
         let _ = &mut settings;
         let mut app = App {
@@ -226,6 +228,7 @@ impl App {
             doc: Doc::new(Map::new_empty(), None),
             fgd,
             vfs: vfs.clone(),
+            vpks,
             #[cfg(feature = "web")]
             web,
             #[cfg(feature = "web")]
@@ -331,7 +334,7 @@ impl App {
     }
 
     pub fn reload_game_data(&mut self) {
-        let (fgd, mats) = load_game_data(&self.vfs, self.settings.active_game());
+        let (fgd, mats) = load_game_data(&self.vfs, &self.vpks, self.settings.active_game());
         self.fgd = fgd;
         self.mats = mats;
         self.thumb_tex.clear();
@@ -1339,9 +1342,9 @@ impl App {
     }
 }
 
-fn load_game_data(vfs: &crate::platform::SharedVfs, g: Option<&GameConfig>) -> (Fgd, Materials) {
+fn load_game_data(vfs: &crate::platform::SharedVfs, vpks: &crate::assets::gamefs::VpkCache, g: Option<&GameConfig>) -> (Fgd, Materials) {
     let Some(g) = g else {
-        return (Fgd::default(), Materials::new(vfs.clone(), Path::new("")));
+        return (Fgd::default(), Materials::new(vfs.clone(), vpks, Path::new("")));
     };
     let mut fgd = Fgd::default();
     if let Some(first) = g.fgds.first() {
@@ -1363,7 +1366,7 @@ fn load_game_data(vfs: &crate::platform::SharedVfs, g: Option<&GameConfig>) -> (
             fgd.names.sort_by_key(|s| s.to_ascii_lowercase());
         }
     }
-    let mats = Materials::new(vfs.clone(), &g.game_path());
+    let mats = Materials::new(vfs.clone(), vpks, &g.game_path());
     (fgd, mats)
 }
 

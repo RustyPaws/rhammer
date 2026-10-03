@@ -1,6 +1,6 @@
 //! Material (VMT/VTF) cache feeding the 3D view and the texture browser.
 
-use crate::assets::gamefs::GameFs;
+use crate::assets::gamefs::{GameFs, VpkCache};
 use crate::formats::vtf;
 use crate::kv::{self as kv, Node, Value};
 use std::collections::HashMap;
@@ -48,8 +48,8 @@ fn find_key(nodes: &[Node], key: &str) -> Option<String> {
 }
 
 impl Materials {
-    pub fn new(vfs: SharedVfs, game_dir: &Path) -> Materials {
-        let fs = GameFs::new(vfs, game_dir);
+    pub fn new(vfs: SharedVfs, vpks: &VpkCache, game_dir: &Path) -> Materials {
+        let fs = GameFs::new(vfs, vpks, game_dir);
         let all: Vec<String> = fs
             .list("materials/", "vmt")
             .into_iter()

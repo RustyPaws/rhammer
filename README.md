@@ -11,7 +11,7 @@
 ## Features
 
 - **VMF support** – open, edit and save `.vmf` maps; `func_instance` instances are loaded and shown in the viewports (VBSP-style path resolution, instance props and hidden objects are handled).
-- **Hammer-style game configurations** – modelled after Hammer's `GameConfig.txt` (Options → Game configurations). Configs are stored in `rhammer_config.txt` and can be imported from Hammer's own `bin/GameConfig.txt`.
+- **Hammer-style game configurations** – modelled after Hammer's `GameConfig.txt` (Options → Game configurations). Configs are stored in `rhammer_config.txt` (browser: local storage) and can be imported from Hammer's own `bin/GameConfig.txt`.
 - **FGD parser** – entity classes, properties, choices, spawnflags and I/O.
 - **I/O graph view** – visualize entity connections (inputs/outputs) as a graph.
 - **Angles editor and direction arrows** – pitch/yaw/roll editor with a yaw dial and Up/Down/compass presets (also for `movedir`); selected entities show their direction arrow in 2D views.
@@ -60,6 +60,26 @@ On Linux, install the development packages first (these are the ones used in CI)
 sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libgl1-mesa-dev
 ```
 
+## Web version
+
+rhammer also runs in the browser (WebAssembly + WebGL2). The browser build is the `web` Cargo feature; the desktop build is the default `local` feature. Differences from the desktop version:
+
+- **Game files** are read through the [File System Access API](https://developer.mozilla.org/docs/Web/API/File_System_API): use *File → Open game folder…* (or *Add game folder…* in the game configuration window) and pick the game folder, e.g. `Portal 2`. The game configuration (FGDs, default entities, directories) is detected from `bin/GameConfig.txt` or `gameinfo.txt`. Nothing is uploaded; files are read locally.
+- **Maps** are opened and saved with the browser's file dialogs, directly on your disk.
+- **Chromium only** – Chrome, Edge or Opera on a desktop. Firefox and Safari do not provide the API; rhammer shows a warning there.
+- **System folders are refused by the browser.** Steam's default `C:\Program Files (x86)\Steam` cannot be opened, so copy the game folder (`steamapps/common/Portal 2`) to a normal folder such as Documents or Desktop and pick the copy.
+- Folders are remembered between visits; the browser may ask you to confirm access again (a *Reconnect* button appears). Settings are kept in the browser's local storage.
+- **No compilers**: running `vbsp`/`vvis`/`vrad` and the compile settings exist only in the desktop version. Wireframe shading in the 3D view is desktop-only too.
+
+Build and run it locally with [Trunk](https://trunkrs.dev/) (`cargo install trunk`, `rustup target add wasm32-unknown-unknown`):
+
+```sh
+trunk serve            # http://127.0.0.1:8080
+trunk build --release  # static files in dist/
+```
+
+The *Web* workflow publishes every push to `main` to GitHub Pages (enable *Settings → Pages → Source: GitHub Actions*) and attaches a static `rhammer-vX.Y.Z-web.zip` to each release. Serve the zip's contents over HTTP(S) (for example `python -m http.server`); the folder picker does not work from `file://`.
+
 ## Releases
 
 Pushing a tag like `vX.Y.Z` triggers the release workflow, which builds and publishes archives for:
@@ -67,6 +87,7 @@ Pushing a tag like `vX.Y.Z` triggers the release workflow, which builds and publ
 - Windows (amd64, aarch64)
 - macOS (aarch64)
 - Linux (amd64, aarch64)
+- Web (static site zip, see above)
 
 ## License
 

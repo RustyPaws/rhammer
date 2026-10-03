@@ -60,6 +60,26 @@ cargo run --release
 sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev libxcb1-dev libgl1-mesa-dev
 ```
 
+## Веб-версия
+
+rhammer работает и в браузере (WebAssembly + WebGL2). Веб-сборка — это Cargo-фича `web`, десктопная — фича `local` (по умолчанию). Отличия от десктопной версии:
+
+- **Файлы игры** читаются через [File System Access API](https://developer.mozilla.org/docs/Web/API/File_System_API): *File → Open game folder…* (или *Add game folder…* в окне конфигураций игры) и выберите папку игры, например `Portal 2`. Конфигурация игры (FGD, сущности по умолчанию, каталоги) определяется по `bin/GameConfig.txt` или `gameinfo.txt`. Ничего не загружается на сервер, файлы читаются локально.
+- **Карты** открываются и сохраняются через файловые диалоги браузера, прямо на вашем диске.
+- **Только Chromium** — Chrome, Edge или Opera на компьютере. В Firefox и Safari этого API нет, rhammer покажет предупреждение.
+- **Браузер не открывает системные папки.** Стандартную папку Steam `C:\Program Files (x86)\Steam` выбрать нельзя, поэтому скопируйте папку игры (`steamapps/common/Portal 2`) в обычную папку, например в «Документы» или на рабочий стол, и выберите копию.
+- Папки запоминаются между визитами; браузер может попросить подтвердить доступ заново (появится кнопка *Reconnect*). Настройки хранятся в локальном хранилище браузера.
+- **Компиляторов нет**: запуск `vbsp`/`vvis`/`vrad` и настройки компиляции есть только в десктопной версии. Каркасный режим 3D-вида тоже только на десктопе.
+
+Локальная сборка и запуск через [Trunk](https://trunkrs.dev/) (`cargo install trunk`, `rustup target add wasm32-unknown-unknown`):
+
+```sh
+trunk serve            # http://127.0.0.1:8080
+trunk build --release  # статические файлы в dist/
+```
+
+Workflow *Web* публикует каждый пуш в `main` на GitHub Pages (включите *Settings → Pages → Source: GitHub Actions*) и прикладывает к каждому релизу статический архив `rhammer-vX.Y.Z-web.zip`. Раздавайте содержимое архива по HTTP(S) (например, `python -m http.server`); выбор папки не работает с `file://`.
+
 ## Релизы
 
 Отправка тега вида `vX.Y.Z` запускает workflow релиза, который собирает и публикует архивы для:
@@ -67,6 +87,7 @@ sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev 
 - Windows (amd64, aarch64)
 - macOS (aarch64)
 - Linux (amd64, aarch64)
+- Web (zip со статическим сайтом, см. выше)
 
 ## Лицензия
 

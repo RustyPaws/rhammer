@@ -3,12 +3,28 @@
 use crate::assets::searchpaths::{self, Mount};
 use crate::assets::vpk::Vpk;
 use crate::platform::{SharedVfs, Vfs};
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
+use std::rc::Rc;
 
 /// A mounted source of files, searched in order.
 enum Source {
     Dir(PathBuf),
-    Pak(Vpk),
+    Pak(Rc<Vpk>),
+}
+
+/// Opened VPK directories, so repeated mounts (browser loading passes, game switches) do not
+/// parse the same multi-megabyte file list again.
+pub type VpkCache = Rc<RefCell<HashMap<PathBuf, Rc<Vpk>>>>;
+
+fn open_pak(vfs: &SharedVfs, cache: &VpkCache, path: &Path) -> Option<Rc<Vpk>> {
+    if let Some(v) = cache.borrow().get(path) {
+        return Some(v.clone());
+    }
+    let v = Rc::new(Vpk::open(vfs, path)?);
+    cache.borrow_mut().insert(path.to_path_buf(), v.clone());
+    Some(v)
 }
 
 pub struct GameFs {
@@ -20,7 +36,7 @@ impl GameFs {
     /// Mounts the game from its `gameinfo.txt` `SearchPaths`. Sibling `<game>_dlcN` folders
     /// (mounted implicitly by the engine) take priority; without a usable gameinfo only the
     /// game folder itself is mounted.
-    pub fn new(vfs: SharedVfs, game_dir: &Path) -> GameFs {
+    pub fn new(vfs: SharedVfs, cache: &VpkCache, game_dir: &Path) -> GameFs {
         let mut mounts: Vec<Mount> = dlc_dirs(&*vfs, game_dir).into_iter().map(Mount::Dir).collect();
         for m in searchpaths::load(&*vfs, game_dir) {
             if !mounts.contains(&m) {
@@ -39,12 +55,12 @@ impl GameFs {
                     // The engine mounts `pak01_dir.vpk` next to every search directory.
                     let pak = d.join("pak01_dir.vpk");
                     if vfs.is_file(&pak) && !sources.iter().any(|s| matches!(s, Source::Pak(v) if v.dir_path() == pak)) {
-                        sources.extend(Vpk::open(&vfs, &pak).map(Source::Pak));
+                        sources.extend(open_pak(&vfs, cache, &pak).map(Source::Pak));
                     }
                 }
                 Mount::Vpk(p) => {
                     if !sources.iter().any(|s| matches!(s, Source::Pak(v) if v.dir_path() == p)) {
-                        sources.extend(Vpk::open(&vfs, &p).map(Source::Pak));
+                        sources.extend(open_pak(&vfs, cache, &p).map(Source::Pak));
                     }
                 }
             }

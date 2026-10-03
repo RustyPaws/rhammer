@@ -140,7 +140,16 @@ impl App {
                         self.begin_pick();
                     }
                     if ui.add_enabled(self.settings.games.len() > 1, egui::Button::new("Remove")).clicked() {
-                        self.settings.games.remove(self.cfg_sel);
+                        #[allow(unused_variables)]
+                        let removed = self.settings.games.remove(self.cfg_sel);
+                        #[cfg(feature = "web")]
+                        {
+                            let root = removed.game_dir.split('/').next().unwrap_or("").to_string();
+                            let used = self.settings.games.iter().any(|g| g.game_dir.split('/').next() == Some(root.as_str()));
+                            if !root.is_empty() && !used {
+                                self.web.forget(&root);
+                            }
+                        }
                         self.cfg_sel = self.cfg_sel.saturating_sub(1);
                         self.settings.active = self.settings.active.min(self.settings.games.len() - 1);
                     }
