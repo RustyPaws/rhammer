@@ -123,6 +123,45 @@ impl App {
             let ndc = (((p.x - rect.left()) / rect.width()) * 2.0 - 1.0, 1.0 - ((p.y - rect.top()) / rect.height()) * 2.0);
             app.cam.ray(aspect, ndc)
         };
+        let cam = self.cam.clone();
+        let project = |p: DVec3| {
+            cam.project(aspect, p).map(|p| Pos2::new(rect.left() + (p.0 * 0.5 + 0.5) * rect.width(), rect.top() + (0.5 - p.1 * 0.5) * rect.height()))
+        };
+        // vertex tool: drag on the world plane most facing the camera, hit by the mouse ray
+        let plane_hit = |o: DVec3, d: DVec3, n: usize, at: f64| (d[n].abs() > 1e-6).then(|| o + d * ((at - o[n]) / d[n])).filter(|_| (at - o[n]) / d[n] > 0.0);
+        if self.tool == Tool::Vertex && resp.drag_started_by(egui::PointerButton::Primary) {
+            if let Some(po) = ui.input(|i| i.pointer.press_origin()).filter(|p| rect.contains(*p)) {
+                let hit = self.vertex_hit(&project, po);
+                self.vertex_select(hit.clone(), ctrl || shift);
+                if let Some((_, grab)) = hit.into_iter().find(|(id, p)| self.vtx.sel.contains(&(*id, *p))) {
+                    let f = cam.forward().abs();
+                    let n = if f.x >= f.y && f.x >= f.z { 0 } else if f.y >= f.z { 1 } else { 2 };
+                    let (o, d) = ray_at(self, po);
+                    if let Some(start) = plane_hit(o, d, n, grab[n]) {
+                        let plane = match n { 0 => [1, 2], 1 => [0, 2], _ => [0, 1] };
+                        self.drag = Some(Drag::Vertex { view: 3, plane, start, grab, delta: DVec3::ZERO });
+                    }
+                }
+            }
+        }
+        if resp.dragged_by(egui::PointerButton::Primary) {
+            if let (Some(Drag::Vertex { view: 3, plane, start, grab, .. }), Some(p)) = (&self.drag, resp.interact_pointer_pos()) {
+                let n = 3 - plane[0] - plane[1];
+                let (o, d) = ray_at(self, p);
+                if let Some(cur) = plane_hit(o, d, n, start[n]) {
+                    let nd = self.vertex_delta(*grab, *start, cur, *plane);
+                    if let Some(Drag::Vertex { delta, .. }) = &mut self.drag {
+                        *delta = nd;
+                    }
+                }
+            }
+        }
+        if resp.drag_stopped_by(egui::PointerButton::Primary) {
+            if let Some(Drag::Vertex { view: 3, delta, .. }) = self.drag {
+                self.drag = None;
+                self.vertex_commit(delta);
+            }
+        }
         if let Some(h) = resp.hover_pos().filter(|_| hovered) {
             let (o, d) = ray_at(self, h);
             if let Some((_, _, t)) = self.pick_3d(o, d) {
@@ -132,9 +171,17 @@ impl App {
         if resp.clicked_by(egui::PointerButton::Primary) {
             if let Some(p) = resp.interact_pointer_pos() {
                 let (o, d) = ray_at(self, p);
+                'click: {
                 let hit = self.pick_3d(o, d);
+                if self.tool == Tool::Vertex {
+                    let corners = self.vertex_hit(&project, p);
+                    if !corners.is_empty() {
+                        self.vertex_select(corners, ctrl || shift);
+                        break 'click;
+                    }
+                }
                 match self.tool {
-                    Tool::Select | Tool::Block | Tool::Clip => match hit {
+                    Tool::Select | Tool::Block | Tool::Clip | Tool::Vertex => match hit {
                         Some((id, _, _)) => {
                             if ctrl || shift {
                                 let mut s = self.sel.clone();
@@ -179,6 +226,7 @@ impl App {
                         }
                     }
                 }
+                }
             }
         }
         if resp.clicked_by(egui::PointerButton::Secondary) && self.tool == Tool::Texture {
@@ -218,6 +266,13 @@ impl App {
                     }
                 }
             }
+        }
+        if self.tool == Tool::Vertex {
+            let delta = match &self.drag {
+                Some(Drag::Vertex { view: 3, delta, .. }) => Some(*delta),
+                _ => None,
+            };
+            self.vertex_draw(&ui.painter_at(rect), &project, delta);
         }
         if hovered && ui.input(|i| i.key_pressed(egui::Key::Z) && !i.modifiers.command) && !ui.ctx().egui_wants_keyboard_input() {
             self.maximized = if self.maximized.is_some() { None } else { Some(0) };

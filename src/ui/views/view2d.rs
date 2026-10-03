@@ -47,10 +47,9 @@ impl App {
 
     pub(crate) fn drag_xform(&self) -> Option<Xform> {
         match &self.drag {
-            Some(Drag::Move { view, start, delta, .. }) => {
+            Some(Drag::Move { view, delta, .. }) => {
                 let (ua, va, _) = axes(*view);
                 let mut t = DVec3::ZERO;
-                let _ = start;
                 t[ua] = delta.0;
                 t[va] = delta.1;
                 Some(Xform::Translate(t))
@@ -398,6 +397,14 @@ impl App {
                 draw_handles(&painter, b, Color32::YELLOW, false);
             }
         }
+        let project = |p: DVec3| Some(pr.to_screen(p[ua], p[va]));
+        if self.tool == Tool::Vertex {
+            let delta = match &self.drag {
+                Some(Drag::Vertex { view: v, delta, .. }) if *v == vi => Some(*delta),
+                _ => None,
+            };
+            self.vertex_draw(&painter, &project, delta);
+        }
         if let Some(Drag::BoxSel { view: v, start, cur }) = &self.drag {
             if *v == vi {
                 let r = Rect::from_two_pos(pr.to_screen(start.0, start.1), pr.to_screen(cur.0, cur.1));
@@ -524,6 +531,20 @@ impl App {
                         self.clip.p1 = Some(sw);
                         self.drag = Some(Drag::ClipLine { view: vi });
                     }
+                    Tool::Vertex => {
+                        let hit = self.vertex_hit(&project, po);
+                        if hit.is_empty() {
+                            self.drag = Some(Drag::BoxSel { view: vi, start: w, cur: w });
+                        } else {
+                            self.vertex_select(hit.clone(), mods.shift || ctrl);
+                            if let Some((_, grab)) = hit.into_iter().find(|(id, p)| self.vtx.sel.contains(&(*id, *p))) {
+                                let mut start = DVec3::ZERO;
+                                start[ua] = w.0;
+                                start[va] = w.1;
+                                self.drag = Some(Drag::Vertex { view: vi, plane: [ua, va], start, grab, delta: DVec3::ZERO });
+                            }
+                        }
+                    }
                     Tool::Entity => {}
                 }
             }
@@ -537,6 +558,17 @@ impl App {
                 let snap = self.snap;
                 let sn = |v: f64| if snap { (v / grid).round() * grid } else { v };
                 let mut block_upd: Option<(DVec3, DVec3)> = None;
+                if let Some(Drag::Vertex { view: v, plane, start, grab, .. }) = &self.drag {
+                    if *v == vi {
+                        let mut cur = *start;
+                        cur[ua] = w.0;
+                        cur[va] = w.1;
+                        let d = self.vertex_delta(*grab, *start, cur, *plane);
+                        if let Some(Drag::Vertex { delta, .. }) = &mut self.drag {
+                            *delta = d;
+                        }
+                    }
+                }
                 match &mut self.drag {
                     Some(Drag::Move { view: v, start, delta, .. }) if *v == vi => {
                         *delta = (sw.0 - start.0, sw.1 - start.1);
@@ -627,6 +659,7 @@ impl App {
                         self.doc.transform(&s, &x, self.tex_lock);
                     }
                 }
+                Some(Drag::Vertex { delta, .. }) => self.vertex_commit(delta),
                 Some(Drag::Origin { view, id, orig, cur }) => {
                     let (ua, va, _) = axes(view);
                     let mut o = orig;
@@ -642,7 +675,10 @@ impl App {
                     let (u0, u1) = (start.0.min(cur.0), start.0.max(cur.0));
                     let (v0, v1) = (start.1.min(cur.1), start.1.max(cur.1));
                     let mut found = Sel::new();
-                    if (u1 - u0) * view_zoom(&self.views[view]) > 3.0 || (v1 - v0) * view_zoom(&self.views[view]) > 3.0 {
+                    if self.tool == Tool::Vertex && !self.sel.is_empty() {
+                        let area = Rect::from_two_pos(pr.to_screen(u0, v0), pr.to_screen(u1, v1));
+                        self.vertex_box_select(&project, area, mods.shift || ctrl);
+                    } else if (u1 - u0) * view_zoom(&self.views[view]) > 3.0 || (v1 - v0) * view_zoom(&self.views[view]) > 3.0 {
                         for id in self.doc.all_ids() {
                             if self.doc.is_hidden(id) {
                                 continue;
@@ -673,7 +709,11 @@ impl App {
             if let Some(cp) = resp.interact_pointer_pos() {
                 let w = wpos(cp);
                 match self.tool {
-                    Tool::Select | Tool::Texture => {
+                    Tool::Vertex if !self.vertex_hit(&project, cp).is_empty() => {
+                        let hit = self.vertex_hit(&project, cp);
+                        self.vertex_select(hit, mods.shift || ctrl);
+                    }
+                    Tool::Select | Tool::Texture | Tool::Vertex => {
                         let hit = self.pick_2d(vi, w, 3.0 / view.zoom);
                         match hit {
                             Some(id) => {

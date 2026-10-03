@@ -47,7 +47,7 @@ fn clip(poly: &[DVec3], pl: &Plane) -> Vec<DVec3> {
         let da = pl.dist(a);
         let db = pl.dist(b);
         let a_in = da <= EPS;
-        let b_in = db <= EPS;
+
         if a_in {
             out.push(a);
         }
@@ -55,7 +55,6 @@ fn clip(poly: &[DVec3], pl: &Plane) -> Vec<DVec3> {
             let t = da / (da - db);
             out.push(a + (b - a) * t);
         }
-        let _ = b_in;
     }
     out
 }
@@ -379,7 +378,7 @@ pub fn clip_solid(s: &Solid, cut: &Plane, material: &str, next_id: &mut u32) -> 
             return None;
         }
         let mut sides = Vec::new();
-        for (i, (sd, poly)) in s.sides.iter().zip(&polys).enumerate() {
+        for (sd, poly) in s.sides.iter().zip(&polys) {
             if poly.is_empty() {
                 continue;
             }
@@ -389,7 +388,6 @@ pub fn clip_solid(s: &Solid, cut: &Plane, material: &str, next_id: &mut u32) -> 
                 *next_id
             };
             n.dispinfo = None;
-            let _ = i;
             sides.push(n);
         }
         let mut cutside = new_side(&polys[cut_idx], pl.n, material, {
@@ -410,6 +408,163 @@ pub fn clip_solid(s: &Solid, cut: &Plane, material: &str, next_id: &mut u32) -> 
     let a = mk(*cut, next_id);
     let b = mk(cut.flipped(), next_id);
     (a, b)
+}
+
+/// Distance under which two polygon corners count as the same vertex.
+const VTX_TOL: f64 = 1e-3;
+
+/// Unique corners of a solid (deduplicated across faces).
+pub fn solid_vertices(geo: &SolidGeo) -> Vec<DVec3> {
+    let mut out: Vec<DVec3> = Vec::new();
+    for p in geo.polys.iter().flatten() {
+        if !out.iter().any(|v| (*v - *p).length() < VTX_TOL) {
+            out.push(*p);
+        }
+    }
+    out
+}
+
+/// Unique edges as index pairs into `verts` (as returned by `solid_vertices`).
+pub fn solid_edges(geo: &SolidGeo, verts: &[DVec3]) -> Vec<(usize, usize)> {
+    let find = |p: DVec3| verts.iter().position(|v| (*v - p).length() < VTX_TOL);
+    let mut out: Vec<(usize, usize)> = Vec::new();
+    for poly in &geo.polys {
+        for i in 0..poly.len() {
+            if let (Some(a), Some(b)) = (find(poly[i]), find(poly[(i + 1) % poly.len()])) {
+                let e = (a.min(b), a.max(b));
+                if a != b && !out.contains(&e) {
+                    out.push(e);
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Outward normal of a CCW polygon (Newell's method); zero for degenerate input.
+fn poly_normal(poly: &[DVec3]) -> DVec3 {
+    let mut n = DVec3::ZERO;
+    for i in 0..poly.len() {
+        let (a, b) = (poly[i], poly[(i + 1) % poly.len()]);
+        n += DVec3::new((a.y - b.y) * (a.z + b.z), (a.z - b.z) * (a.x + b.x), (a.x - b.x) * (a.y + b.y));
+    }
+    n.normalize_or_zero()
+}
+
+fn is_planar(poly: &[DVec3]) -> bool {
+    let n = poly_normal(poly);
+    if n == DVec3::ZERO {
+        return false;
+    }
+    let c = poly.iter().copied().sum::<DVec3>() / poly.len() as f64;
+    poly.iter().all(|v| n.dot(*v - c).abs() < EPS)
+}
+
+/// Split a non-planar polygon into a triangle fan whose triangles keep the remaining corners
+/// behind them (so the brush stays convex). `None` when no fan qualifies.
+fn triangulate_convex(poly: &[DVec3], outward: DVec3) -> Option<Vec<Vec<DVec3>>> {
+    let n = poly.len();
+    'fan: for s in 0..n {
+        let mut tris = Vec::new();
+        for i in 1..n - 1 {
+            let tri = vec![poly[s], poly[(s + i) % n], poly[(s + i + 1) % n]];
+            let nn = poly_normal(&tri);
+            if nn.dot(outward) <= 0.0 {
+                continue 'fan;
+            }
+            let d = nn.dot(tri[0]);
+            if poly.iter().any(|v| nn.dot(*v) - d > EPS) {
+                continue 'fan;
+            }
+            tris.push(tri);
+        }
+        return Some(tris);
+    }
+    None
+}
+
+/// Rebuild a solid from new per-side polygons (parallel to `s.sides`; empty drops the side).
+/// Faces that became non-planar are triangulated. Returns `None` if the result is not a valid
+/// convex brush with exactly the requested faces.
+fn rebuild_from_polys(s: &Solid, geo: &SolidGeo, polys: Vec<Vec<DVec3>>, next_id: &mut u32) -> Option<Solid> {
+    if s.sides.iter().any(|sd| sd.dispinfo.is_some()) {
+        return None;
+    }
+    let mut id = *next_id;
+    let mut sides: Vec<Side> = Vec::new();
+    let mut expected: Vec<Vec<DVec3>> = Vec::new();
+    for ((sd, old), new) in s.sides.iter().zip(&geo.polys).zip(polys) {
+        if old.len() < 3 || new.len() < 3 {
+            continue;
+        }
+        let faces = if is_planar(&new) {
+            vec![new]
+        } else {
+            triangulate_convex(&new, poly_normal(old))?
+        };
+        for (k, face) in faces.into_iter().enumerate() {
+            if poly_normal(&face).dot(poly_normal(old)) <= 0.0 {
+                return None;
+            }
+            let pts = plane_points(&face)?;
+            let mut ns = sd.clone();
+            if k > 0 {
+                id += 1;
+                ns.id = id;
+            }
+            ns.plane = [snap_near(pts[0]), snap_near(pts[1]), snap_near(pts[2])];
+            sides.push(ns);
+            expected.push(face);
+        }
+    }
+    if sides.len() < 4 {
+        return None;
+    }
+    let out = Solid { id: s.id, sides, editor: s.editor.clone(), hidden: s.hidden };
+    let check = SolidGeo::build(&out);
+    for (got, want) in check.polys.iter().zip(&expected) {
+        if got.len() != want.len() || !want.iter().all(|w| got.iter().any(|g| (*g - *w).length() < 0.05)) {
+            return None;
+        }
+    }
+    *next_id = id;
+    Some(out)
+}
+
+/// Move vertices (`(from, to)` pairs matched by position). `None` if the result is invalid.
+pub fn move_vertices(s: &Solid, geo: &SolidGeo, moves: &[(DVec3, DVec3)], next_id: &mut u32) -> Option<Solid> {
+    let polys = geo
+        .polys
+        .iter()
+        .map(|p| {
+            p.iter()
+                .map(|v| moves.iter().find(|(o, _)| (*o - *v).length() < VTX_TOL).map_or(*v, |(_, n)| *n))
+                .collect()
+        })
+        .collect();
+    rebuild_from_polys(s, geo, polys, next_id)
+}
+
+/// Collapse vertex `b` onto vertex `a`; faces reduced to fewer than three corners disappear.
+pub fn merge_vertices(s: &Solid, geo: &SolidGeo, a: DVec3, b: DVec3, next_id: &mut u32) -> Option<Solid> {
+    let polys = geo
+        .polys
+        .iter()
+        .map(|p| {
+            let mut out: Vec<DVec3> = Vec::with_capacity(p.len());
+            for v in p {
+                let v = if (*v - b).length() < VTX_TOL { a } else { *v };
+                if out.last().map_or(true, |l| (*l - v).length() >= VTX_TOL) {
+                    out.push(v);
+                }
+            }
+            while out.len() > 1 && (out[0] - out[out.len() - 1]).length() < VTX_TOL {
+                out.pop();
+            }
+            out
+        })
+        .collect();
+    rebuild_from_polys(s, geo, polys, next_id)
 }
 
 /// Möller–Trumbore style ray vs. convex polygon (fan). Returns distance along the ray.
@@ -473,4 +628,74 @@ pub fn ray_aabb(o: DVec3, d: DVec3, min: DVec3, max: DVec3) -> Option<f64> {
         }
     }
     Some(tmin)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn cube() -> Solid {
+        let mut id = 0;
+        solid_from_planes(&box_planes(DVec3::ZERO, DVec3::splat(64.0)), "M", &mut id, 0.25, 16).unwrap()
+    }
+
+    fn corner(geo: &SolidGeo, p: DVec3) -> DVec3 {
+        *solid_vertices(geo).iter().find(|v| (**v - p).length() < 1e-3).unwrap()
+    }
+
+    #[test]
+    fn cube_has_8_vertices_12_edges() {
+        let geo = SolidGeo::build(&cube());
+        let v = solid_vertices(&geo);
+        assert_eq!(v.len(), 8);
+        assert_eq!(solid_edges(&geo, &v).len(), 12);
+    }
+
+    #[test]
+    fn moving_a_vertex_triangulates_the_broken_faces() {
+        let s = cube();
+        let geo = SolidGeo::build(&s);
+        let top = corner(&geo, DVec3::splat(64.0));
+        let mut next = 100;
+        let out = move_vertices(&s, &geo, &[(top, top + DVec3::new(16.0, 0.0, 16.0))], &mut next).unwrap();
+        let g = SolidGeo::build(&out);
+        assert_eq!(solid_vertices(&g).len(), 8);
+        assert!(out.sides.len() > 6);
+        assert!(g.polys.iter().all(|p| p.len() >= 3));
+    }
+
+    #[test]
+    fn moving_a_vertex_in_its_face_plane_stays_planar() {
+        let s = cube();
+        let geo = SolidGeo::build(&s);
+        // all four corners of the top face slide together -> still a cube-like prism
+        let moves: Vec<_> = solid_vertices(&geo)
+            .into_iter()
+            .filter(|v| v.z > 63.0)
+            .map(|v| (v, v + DVec3::new(8.0, 0.0, 0.0)))
+            .collect();
+        let mut next = 100;
+        let out = move_vertices(&s, &geo, &moves, &mut next).unwrap();
+        assert_eq!(out.sides.len(), 6);
+    }
+
+    #[test]
+    fn inverting_a_vertex_is_rejected() {
+        let s = cube();
+        let geo = SolidGeo::build(&s);
+        let top = corner(&geo, DVec3::splat(64.0));
+        let mut next = 100;
+        assert!(move_vertices(&s, &geo, &[(top, DVec3::new(-64.0, -64.0, -64.0))], &mut next).is_none());
+    }
+
+    #[test]
+    fn merging_two_corners_gives_seven_vertices() {
+        let s = cube();
+        let geo = SolidGeo::build(&s);
+        let a = corner(&geo, DVec3::new(64.0, 64.0, 64.0));
+        let b = corner(&geo, DVec3::new(64.0, 0.0, 64.0));
+        let mut next = 100;
+        let out = merge_vertices(&s, &geo, a, b, &mut next).unwrap();
+        assert_eq!(solid_vertices(&SolidGeo::build(&out)).len(), 7);
+    }
 }

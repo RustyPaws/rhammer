@@ -16,7 +16,7 @@
 - **I/O graph view** – visualize entity connections (inputs/outputs) as a graph.
 - **Angles editor and direction arrows** – pitch/yaw/roll editor with a yaw dial and Up/Down/compass presets (also for `movedir`); selected entities show their direction arrow in 2D views.
 - **Origin editing** – drag the origin marker of a selected brush entity in 2D views; new brush entities get their origin at the centre of their brushes.
-- **Editing tools** – Select, Block, Entity, Clip and Texture application tools, plus Transform, Make hollow, Tie to entity, Move to world, Rotate and Mirror, texture lock, and undo/redo.
+- **Editing tools** – Select, Block, Entity, Clip, Vertex and Texture application tools, plus Transform, Make hollow, Tie to entity, Move to world, Rotate and Mirror, texture lock, and undo/redo.
 - **2D and 3D viewports** – 4-view layout, grid, wireframe mode, entity names, frame selection / frame all, Hammer-style selection/block dimensions in 2D views, selected objects drawn on top.
 - **Asset loading** – game files are mounted from the `SearchPaths` of `gameinfo.txt`; VPK archives, VTF textures (including transparent textures flagged in VMT), and MDL models (with VVD/VTX/ANI).
 - **Texture browser and model viewer** – browse textures, orbit and pan (right/middle drag) textured models, play sequences, show bones and attachments; the model viewer also works as a picker for `studio` keys.
@@ -32,7 +32,8 @@
 | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` / `Ctrl+D` | Cut / Copy / Paste / Duplicate |
 | `Ctrl+A` / `Ctrl+F` | Select all / Find |
 | `Ctrl+M` / `Ctrl+H` / `Ctrl+T` | Transform / Make hollow / Tie to entity |
-| `Shift+S` / `Shift+B` / `Shift+E` / `Shift+C` / `Shift+A` | Select / Block / Entity / Clip / Texture tool |
+| `Shift+S` / `Shift+B` / `Shift+E` / `Shift+C` / `Shift+V` / `Shift+A` | Select / Block / Entity / Clip / Vertex / Texture tool |
+| `Ctrl+F` (Vertex tool) | Merge selected vertices |
 | `Shift+F` | Frame selection |
 | `Enter` | Commit block / clip |
 | `Esc` | Cancel / clear selection |

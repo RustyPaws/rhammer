@@ -274,6 +274,23 @@ impl Doc {
 
     // ---- operations ------------------------------------------------------------------------
 
+    /// Swap in edited versions of existing solids (matched by id).
+    pub fn replace_solids(&mut self, new: Vec<Solid>) {
+        for n in new {
+            let slot = self
+                .map
+                .world
+                .solids
+                .iter_mut()
+                .chain(self.map.entities.iter_mut().flat_map(|e| e.solids.iter_mut()))
+                .find(|s| s.id == n.id);
+            if let Some(s) = slot {
+                *s = n;
+            }
+        }
+        self.touch();
+    }
+
     pub fn transform(&mut self, sel: &Sel, xf: &Xform, texture_lock: bool) {
         let flip = xf.flips();
         let f = |p: DVec3| xf.point(p);

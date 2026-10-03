@@ -24,6 +24,7 @@ pub enum Tool {
     Block,
     Entity,
     Clip,
+    Vertex,
     Texture,
 }
 
@@ -51,6 +52,9 @@ pub enum Drag {
     Rotate { view: usize, center: DVec3, start_angle: f64, angle: f64 },
     /// Dragging the origin marker of the selected entity; `orig` is the origin when the drag began.
     Origin { view: usize, id: u32, orig: DVec3, cur: (f64, f64) },
+    /// Moving the selected corners of a brush. `view` 3 is the 3D view; `plane` holds the two world
+    /// axes that move, `start` is the raw mouse position in world space and `grab` the corner under it.
+    Vertex { view: usize, plane: [usize; 2], start: DVec3, grab: DVec3, delta: DVec3 },
 }
 
 #[derive(Default)]
@@ -138,6 +142,7 @@ pub struct App {
     pub ent_class: String,
     pub ent_filter: String,
     pub clip: ClipState,
+    pub vtx: crate::ui::views::VertexState,
     pub drag: Option<Drag>,
     pub clipboard: Clipboard,
     pub status: String,
@@ -285,6 +290,7 @@ impl App {
             ctx: cc.egui_ctx.clone(),
             thumb_tex: Default::default(),
             rot_mode: false,
+            vtx: Default::default(),
             paste_count: 0,
             show_entity_names: true,
             inst: Default::default(),
@@ -491,6 +497,7 @@ impl App {
     pub fn set_sel(&mut self, s: Sel) {
         self.sel = s;
         self.rot_mode = false;
+        self.vtx.sel.clear();
         self.bump_sel();
     }
 
@@ -879,6 +886,7 @@ impl App {
     pub fn undo(&mut self) {
         if self.doc.undo() {
             self.sel.retain(|id| self.doc.index.contains_key(id));
+            self.vtx.sel.clear();
             self.bump_sel();
             self.status = "Undo".into();
         }
@@ -887,6 +895,7 @@ impl App {
     pub fn redo(&mut self) {
         if self.doc.redo() {
             self.sel.retain(|id| self.doc.index.contains_key(id));
+            self.vtx.sel.clear();
             self.bump_sel();
             self.status = "Redo".into();
         }
@@ -963,7 +972,7 @@ impl App {
             if pressed(Key::M) {
                 self.win.transform = true;
             }
-            if pressed(Key::F) {
+            if pressed(Key::F) && !(self.tool == Tool::Vertex && self.vertex_merge()) {
                 self.win.find = true;
             }
             if pressed(Key::A) {
@@ -981,6 +990,7 @@ impl App {
             if pressed(Key::B) { self.tool = Tool::Block; }
             if pressed(Key::E) { self.tool = Tool::Entity; }
             if pressed(Key::C) { self.tool = Tool::Clip; }
+            if pressed(Key::V) { self.tool = Tool::Vertex; }
             if pressed(Key::A) { self.tool = Tool::Texture; self.tab = RightTab::Texture; }
             if pressed(Key::F) { self.frame_selection(); }
         }
@@ -993,6 +1003,7 @@ impl App {
                 self.clip.p0 = None;
                 self.clip.p1 = None;
                 self.drag = None;
+                self.vtx.sel.clear();
                 if !self.sel.is_empty() {
                     self.set_sel(Sel::new());
                 }
@@ -1243,6 +1254,7 @@ impl App {
                 (Tool::Block, "Block", "Block tool (Shift+B)"),
                 (Tool::Entity, "Entity", "Entity tool (Shift+E)"),
                 (Tool::Clip, "Clip", "Clip tool (Shift+C)"),
+                (Tool::Vertex, "Vertex", "Vertex manipulation tool (Shift+V)"),
                 (Tool::Texture, "Texture", "Texture application (Shift+A)"),
             ] {
                 if ui.selectable_label(self.tool == t, label).on_hover_text(tip).clicked() {
@@ -1297,6 +1309,9 @@ impl App {
                 Tool::Texture => {
                     ui.label(format!("Material: {}", self.cur_mat));
                     ui.label(RichText::new("LMB select face - RMB apply texture").weak());
+                }
+                Tool::Vertex => {
+                    ui.label(RichText::new("select a brush - drag corners or edge dots - Ctrl+F merges selected corners").weak());
                 }
                 Tool::Select => {
                     ui.label(RichText::new("click / drag to select - Shift+drag clones").weak());

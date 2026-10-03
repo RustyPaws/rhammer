@@ -3,7 +3,10 @@
 mod overlays;
 mod scene;
 mod view2d;
+mod vertex;
 mod view3d;
+
+pub use vertex::VertexState;
 
 use crate::app::*;
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
