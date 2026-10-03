@@ -98,6 +98,10 @@ impl Vpk {
         })
     }
 
+    pub fn dir_path(&self) -> &Path {
+        &self.dir_path
+    }
+
     pub fn read(&self, name: &str) -> Option<Vec<u8>> {
         let e = self.files.get(&name.to_ascii_lowercase().replace('\\', "/"))?;
         let mut out = e.preload.clone();

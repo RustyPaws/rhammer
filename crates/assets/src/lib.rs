@@ -3,6 +3,7 @@
 pub mod gamefs;
 pub mod materials;
 pub mod mdl;
+pub mod searchpaths;
 pub mod vpk;
 
 pub use gamefs::GameFs;
