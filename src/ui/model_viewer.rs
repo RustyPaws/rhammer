@@ -53,6 +53,8 @@ pub struct ModelViewer {
     pub yaw: f32,
     pub pitch: f32,
     pub zoom: f32,
+    /// Camera target offset from the model center (panning).
+    pub pan: Vec3,
     pub show_mesh: bool,
     pub show_bones: bool,
     pub show_attach: bool,
@@ -81,6 +83,7 @@ impl Default for ModelViewer {
             yaw: 0.6,
             pitch: 0.3,
             zoom: 1.0,
+            pan: Vec3::ZERO,
             show_mesh: true,
             show_bones: false,
             show_attach: false,
@@ -248,6 +251,7 @@ impl App {
         mv.seq = 0;
         mv.time = 0.0;
         mv.zoom = 1.0;
+        mv.pan = Vec3::ZERO;
         mv.mesh_key = Default::default();
     }
 
@@ -312,6 +316,7 @@ impl App {
                 mv.yaw = 0.6;
                 mv.pitch = 0.3;
                 mv.zoom = 1.0;
+                mv.pan = Vec3::ZERO;
             }
         });
 
@@ -375,7 +380,7 @@ impl App {
         let avail = ui.available_size();
         let h = (avail.y - 50.0).max(240.0);
         let (resp, painter) = ui.allocate_painter(egui::vec2(avail.x.max(300.0), h), Sense::click_and_drag());
-        if resp.dragged() {
+        if resp.dragged_by(egui::PointerButton::Primary) {
             let d = resp.drag_delta();
             mv.yaw -= d.x * 0.01;
             mv.pitch = (mv.pitch + d.y * 0.01).clamp(-1.5, 1.5);
@@ -387,9 +392,20 @@ impl App {
         let painter = painter.with_clip_rect(resp.rect.intersect(ui.clip_rect()));
 
         let (hmin, hmax) = (v3(model.hull_min), v3(model.hull_max));
-        let center = (hmin + hmax) * 0.5;
+        let base = (hmin + hmax) * 0.5;
         let radius = ((hmax - hmin).length() * 0.5).max(4.0);
         let dist = radius * 2.6 * mv.zoom;
+        // Pan along the view plane with right/middle drag
+        let dir = Vec3::new(mv.pitch.cos() * mv.yaw.cos(), mv.pitch.cos() * mv.yaw.sin(), mv.pitch.sin());
+        let right = (-dir).cross(Vec3::Z).normalize_or_zero();
+        let up = right.cross(-dir).normalize_or_zero();
+        let mut mv_pan = |dx: f32, dy: f32| mv.pan += right * dx + up * dy;
+        if resp.dragged_by(egui::PointerButton::Secondary) || resp.dragged_by(egui::PointerButton::Middle) {
+            let d = resp.drag_delta();
+            let per_px = dist * 0.97 / resp.rect.height().max(1.0);
+            mv_pan(-d.x * per_px, d.y * per_px);
+        }
+        let center = base + mv.pan;
         let eye = center + dist * Vec3::new(mv.pitch.cos() * mv.yaw.cos(), mv.pitch.cos() * mv.yaw.sin(), mv.pitch.sin());
         let aspect = resp.rect.width() / resp.rect.height().max(1.0);
         let vp = Mat4::perspective_rh_gl(0.9, aspect, (dist * 0.02).max(0.1), dist * 10.0) * Mat4::look_at_rh(eye, center, Vec3::Z);
@@ -458,7 +474,7 @@ impl App {
                 painter.text(po + egui::vec2(5.0, -5.0), egui::Align2::LEFT_BOTTOM, &a.name, egui::FontId::proportional(12.0), Color32::from_rgb(120, 230, 255));
             }
         }
-        painter.text(resp.rect.left_bottom() + egui::vec2(6.0, -6.0), egui::Align2::LEFT_BOTTOM, "drag: orbit   wheel: zoom", egui::FontId::proportional(11.0), Color32::from_gray(160));
+        painter.text(resp.rect.left_bottom() + egui::vec2(6.0, -6.0), egui::Align2::LEFT_BOTTOM, "drag: orbit   right/middle drag: move   wheel: zoom", egui::FontId::proportional(11.0), Color32::from_gray(160));
 
         // info
         ui.weak(format!(
