@@ -7,6 +7,19 @@ use crate::render3d::{self};
 use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke};
 use glam::DVec3;
 
+/// True if the ray hits the polygon from behind (convex solid, normal oriented away from `center`),
+/// so a camera inside a brush clicks through its faces.
+fn back_facing(d: DVec3, center: DVec3, poly: &[DVec3]) -> bool {
+    if poly.len() < 3 {
+        return false;
+    }
+    let mut n = (poly[1] - poly[0]).cross(poly[2] - poly[0]);
+    if n.dot(poly[0] - center) < 0.0 {
+        n = -n;
+    }
+    n.dot(d) > 0.0
+}
+
 impl App {
     /// Ray pick: returns (object id, side id (if solid), distance).
     pub fn pick_3d(&self, o: DVec3, d: DVec3) -> Option<(u32, Option<u32>, f64)> {
@@ -24,7 +37,11 @@ impl App {
             if geom::ray_aabb(o, d, g.min - DVec3::splat(1.0), g.max + DVec3::splat(1.0)).is_none() {
                 continue;
             }
+            let center = (g.min + g.max) * 0.5;
             for (sd, poly) in s.sides.iter().zip(&g.polys) {
+                if back_facing(d, center, poly) {
+                    continue;
+                }
                 if let Some(t) = geom::ray_poly(o, d, poly) {
                     consider(s.id, Some(sd.id), t);
                 }
@@ -46,6 +63,11 @@ impl App {
                     continue;
                 }
                 let (a, b) = self.doc.ent_bounds(e, &self.fgd);
+                // camera inside the box: ignore it so clicks pass through
+                let inside = (0..3).all(|i| o[i] > a[i] && o[i] < b[i]);
+                if inside {
+                    continue;
+                }
                 if let Some(t) = geom::ray_aabb(o, d, a, b) {
                     consider(e.id, None, t);
                 }
@@ -55,7 +77,11 @@ impl App {
                     if geom::ray_aabb(o, d, g.min - DVec3::splat(1.0), g.max + DVec3::splat(1.0)).is_none() {
                         continue;
                     }
+                    let center = (g.min + g.max) * 0.5;
                     for (sd, poly) in s.sides.iter().zip(&g.polys) {
+                        if back_facing(d, center, poly) {
+                            continue;
+                        }
                         if let Some(t) = geom::ray_poly(o, d, poly) {
                             consider(e.id, Some(sd.id), t);
                         }
