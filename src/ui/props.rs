@@ -150,13 +150,14 @@ impl App {
                     ui.label("Tie to entity:");
                     let cur = self.default_solid_class();
                     let mut chosen: Option<String> = None;
-                    egui::ComboBox::from_id_salt("tiecls").selected_text(cur.clone()).show_ui(ui, |ui| {
+                    egui::ComboBox::from_id_salt("tiecls").selected_text(cur.clone()).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
                         ui.add(egui::TextEdit::singleline(&mut self.ent_filter).hint_text("filter…"));
                         let f = self.ent_filter.to_ascii_lowercase();
                         egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                             for c in self.fgd.solid_classes() {
-                                if (f.is_empty() || c.name.contains(&f)) && ui.selectable_label(false, &c.name).clicked() {
+                                if (f.is_empty() || c.name.to_ascii_lowercase().contains(&f)) && ui.selectable_label(false, &c.name).clicked() {
                                     chosen = Some(c.name.clone());
+                                    ui.close();
                                 }
                             }
                         });
@@ -192,7 +193,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label("Class");
                 let solid = !e.solids.is_empty();
-                egui::ComboBox::from_id_salt("objclass").selected_text(class_name.clone()).width(ui.available_width() - 8.0).height(400.0).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("objclass").selected_text(class_name.clone()).width(ui.available_width() - 8.0).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
                     ui.add(egui::TextEdit::singleline(&mut self.ent_filter).hint_text("filter…"));
                     let f = self.ent_filter.to_ascii_lowercase();
                     egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
@@ -207,6 +208,7 @@ impl App {
                         for n in list {
                             if ui.selectable_label(n == class_name, &n).clicked() {
                                 edits.push(Edit::Set("classname".into(), n));
+                                ui.close();
                             }
                         }
                     });
@@ -320,7 +322,7 @@ impl App {
                 let mut pick: Option<usize> = None;
                 ui.horizontal(|ui| {
                     ui.label("Sequence");
-                    egui::ComboBox::from_id_salt("model_seq").selected_text(&seq.name).width(ui.available_width() - 8.0).height(400.0).show_ui(ui, |ui| {
+                    egui::ComboBox::from_id_salt("model_seq").selected_text(&seq.name).width(ui.available_width() - 8.0).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
                         let id = ui.id().with("seqfilter");
                         let mut f: String = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
                         ui.add(egui::TextEdit::singleline(&mut f).hint_text("filter…"));
@@ -335,6 +337,7 @@ impl App {
                                 let r = if s.activity.is_empty() { r } else { r.on_hover_text(&s.activity) };
                                 if r.clicked() {
                                     pick = Some(i);
+                                    ui.close();
                                 }
                             }
                         });

@@ -1020,7 +1020,7 @@ impl App {
 
     pub fn entity_class_picker(&mut self, ui: &mut egui::Ui) {
         let cur = self.ent_class.clone();
-        egui::ComboBox::from_id_salt("entclass").selected_text(cur).width(220.0).height(400.0).show_ui(ui, |ui| {
+        egui::ComboBox::from_id_salt("entclass").selected_text(cur).width(220.0).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
             ui.add(egui::TextEdit::singleline(&mut self.ent_filter).hint_text("filter..."));
             let f = self.ent_filter.to_ascii_lowercase();
             egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
@@ -1033,6 +1033,7 @@ impl App {
                 for n in names {
                     if ui.selectable_label(self.ent_class == n, &n).clicked() {
                         self.ent_class = n;
+                        ui.close();
                     }
                 }
             });
