@@ -656,6 +656,24 @@ impl App {
         }
         let (ctrl, shift, alt) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift, i.modifiers.alt));
         let pressed = |k: Key| ctx.input(|i| i.key_pressed(k));
+        // egui turns Ctrl+C/X/V into Copy/Cut/Paste events instead of key presses
+        let (ev_copy, ev_cut, ev_paste) = ctx.input(|i| {
+            let has = |f: fn(&egui::Event) -> bool| i.events.iter().any(f);
+            (
+                has(|e| matches!(e, egui::Event::Copy)),
+                has(|e| matches!(e, egui::Event::Cut)),
+                has(|e| matches!(e, egui::Event::Paste(_))),
+            )
+        });
+        if ev_copy {
+            self.copy_selection();
+        }
+        if ev_cut {
+            self.cut_selection();
+        }
+        if ev_paste {
+            self.paste_clipboard();
+        }
         if ctrl {
             if pressed(Key::Z) {
                 if shift { self.redo() } else { self.undo() }
@@ -671,15 +689,6 @@ impl App {
             }
             if pressed(Key::N) {
                 self.request(PendingAction::New);
-            }
-            if pressed(Key::C) {
-                self.copy_selection();
-            }
-            if pressed(Key::X) {
-                self.cut_selection();
-            }
-            if pressed(Key::V) {
-                self.paste_clipboard();
             }
             if pressed(Key::D) {
                 self.duplicate_selection();
