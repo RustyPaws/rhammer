@@ -795,6 +795,7 @@ impl App {
             self.rebuild_instances();
             self.inst_key = if self.inst_cache.starved { u64::MAX } else { self.doc.version };
             self.world_key = (u64::MAX, 0);
+            self.models_key = u64::MAX; // instance props may need loading
             if self.inst_cache.starved {
                 self.ctx.request_repaint();
             }
@@ -833,11 +834,11 @@ impl App {
         }
     }
 
-    /// Load (a few per frame) the models referenced by entities and publish their hulls.
+    /// Load (a few per frame) the models referenced by entities and instances, and publish their hulls.
     fn ensure_models(&mut self) {
         self.model_budget = 6;
         self.model_starved = false;
-        let paths: Vec<String> = self
+        let mut paths: Vec<String> = self
             .doc
             .map
             .entities
@@ -845,6 +846,9 @@ impl App {
             .filter(|e| e.solids.is_empty())
             .filter_map(|e| crate::editor::doc::entity_model(e, &self.fgd))
             .collect();
+        paths.extend(self.inst.values().flat_map(|ig| ig.props.iter().map(|p| p.model.clone())));
+        paths.sort_unstable();
+        paths.dedup();
         for p in paths {
             if !self.models.contains_key(&p) {
                 if self.model_budget <= 0 {
@@ -859,6 +863,22 @@ impl App {
                 self.doc.model_bounds.insert(p, (m.hull_min, m.hull_max));
             }
         }
+        // grow instance bounds by the hulls of the props they contain
+        for (id, ig) in &self.inst {
+            let Some(b) = self.doc.inst_bounds.get_mut(id) else { continue };
+            for p in &ig.props {
+                let Some(Some(m)) = self.models.get(&p.model) else { continue };
+                for i in 0..8 {
+                    let c = DVec3::new(
+                        if i & 1 != 0 { m.hull_max.x } else { m.hull_min.x },
+                        if i & 2 != 0 { m.hull_max.y } else { m.hull_min.y },
+                        if i & 4 != 0 { m.hull_max.z } else { m.hull_min.z },
+                    );
+                    let w = p.origin + p.rot * (c * p.scale);
+                    *b = (b.0.min(w), b.1.max(w));
+                }
+            }
+        }
         if self.model_starved {
             self.ctx.request_repaint();
         }
@@ -867,15 +887,9 @@ impl App {
     fn rebuild_instances(&mut self) {
         self.inst_cache.budget = 4;
         self.inst_cache.starved = false;
-        let mut dirs: Vec<std::path::PathBuf> = vec![];
-        if let Some(d) = self.doc.path.as_ref().and_then(|p| p.parent()) {
-            dirs.push(d.to_path_buf());
-        }
-        if let Some(g) = self.game() {
-            if !g.map_dir.is_empty() {
-                dirs.push(std::path::PathBuf::from(&g.map_dir));
-            }
-        }
+        let map_dir = self.doc.path.as_ref().and_then(|p| p.parent()).map(|p| p.to_path_buf());
+        let fallback: Vec<std::path::PathBuf> =
+            self.game().filter(|g| !g.map_dir.is_empty()).map(|g| std::path::PathBuf::from(&g.map_dir)).into_iter().collect();
         let jobs: Vec<(u32, String, DVec3, DVec3)> = self
             .doc
             .map
@@ -887,7 +901,7 @@ impl App {
         let mut out = HashMap::new();
         let mut bounds = HashMap::new();
         for (id, file, o, a) in jobs {
-            if let Some(g) = crate::editor::instances::instance_geo(&mut self.inst_cache, &file, o, a, &dirs) {
+            if let Some(g) = crate::editor::instances::instance_geo(&mut self.inst_cache, &self.fgd, &file, o, a, map_dir.as_deref(), &fallback) {
                 bounds.insert(id, (g.min, g.max));
                 out.insert(id, g);
             }
@@ -1065,6 +1079,19 @@ impl App {
             let skin: usize = e.get("skin").and_then(|s| s.parse().ok()).unwrap_or(0);
             let scale: f64 = e.get("modelscale").and_then(|s| s.parse().ok()).unwrap_or(1.0);
             jobs.push((model.clone(), e.origin(), crate::editor::doc::angles_matrix(e.angles()), skin, scale, seq, frame));
+        }
+        // props inside instances, shown in their bind pose
+        for (id, ig) in &self.inst {
+            if self.doc.is_hidden(*id) {
+                continue;
+            }
+            for p in &ig.props {
+                if let Some(Some(model)) = self.models.get(&p.model) {
+                    if !model.parts.is_empty() {
+                        jobs.push((model.clone(), p.origin, p.rot, p.skin, p.scale, 0, 0.0));
+                    }
+                }
+            }
         }
         self.anim_active = active;
         let mut batches: HashMap<String, Vec<Vertex>> = HashMap::new();

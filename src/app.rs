@@ -272,7 +272,7 @@ impl App {
         self.fgd = fgd;
         self.mats = mats;
         self.thumb_tex.clear();
-        self.inst_cache.files.clear();
+        self.inst_cache.clear();
         self.models.clear();
         self.mv = Default::default();
         self.doc.model_bounds.clear();
