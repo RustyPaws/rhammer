@@ -1,10 +1,10 @@
 [package]
 name = "rhammer-core"
-version = "0.1.0"
-edition = "2021"
-license = "MIT"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
 
 [dependencies]
-rhammer-kv = { path = "../kv" }
-rhammer-formats = { path = "../formats" }
+rhammer-kv = { workspace = true }
+rhammer-formats = { workspace = true }
 glam = { workspace = true }
