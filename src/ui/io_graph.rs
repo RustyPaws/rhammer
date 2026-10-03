@@ -10,7 +10,7 @@ use egui_snarl::{InPin, InPinId, NodeId, OutPin, OutPinId, Snarl};
 use crate::formats::vmf::{Connection, Entity, Map};
 
 const COL_W: f32 = 280.0;
-const ROW_H: f32 = 130.0;
+const GAP_Y: f32 = 36.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Scope {
@@ -166,6 +166,145 @@ impl Ord for Key {
     }
 }
 
+/// Rough rendered height of a node: header plus one row per pin.
+fn node_height(n: &IoNode) -> f32 {
+    52.0 + 24.0 * n.inputs.len().max(n.outputs.len()).max(1) as f32
+}
+
+/// Tree-like layered layout. Columns are the longest path from the roots (cycles are cut at
+/// their back edges), rows are ordered to reduce crossings, and every node sits next to the
+/// middle of its parents.
+fn layout(order: &[Key], edges: &[(Key, Key)], heights: &HashMap<Key, f32>) -> HashMap<Key, Pos2> {
+    let n = order.len();
+    let idx: HashMap<&Key, usize> = order.iter().enumerate().map(|(i, k)| (k, i)).collect();
+    let mut succ: Vec<Vec<usize>> = vec![vec![]; n];
+    let mut has_pred = vec![false; n];
+    for (a, b) in edges {
+        let (a, b) = (idx[a], idx[b]);
+        if a != b && !succ[a].contains(&b) {
+            succ[a].push(b);
+            has_pred[b] = true;
+        }
+    }
+
+    // DFS: preorder + drop back edges so the rest is a DAG
+    let mut state = vec![0u8; n]; // 0 new, 1 on stack, 2 done
+    let mut pre = vec![usize::MAX; n];
+    let mut next_pre = 0;
+    let mut fwd: Vec<Vec<usize>> = vec![vec![]; n];
+    let roots: Vec<usize> = (0..n).filter(|&i| !has_pred[i]).chain(0..n).collect();
+    for r in roots {
+        if state[r] != 0 {
+            continue;
+        }
+        state[r] = 1;
+        pre[r] = next_pre;
+        next_pre += 1;
+        let mut stack = vec![(r, 0usize)];
+        while let Some((u, i)) = stack.pop() {
+            if i < succ[u].len() {
+                stack.push((u, i + 1));
+                let v = succ[u][i];
+                match state[v] {
+                    0 => {
+                        fwd[u].push(v);
+                        state[v] = 1;
+                        pre[v] = next_pre;
+                        next_pre += 1;
+                        stack.push((v, 0));
+                    }
+                    1 => {} // back edge
+                    _ => fwd[u].push(v),
+                }
+            } else {
+                state[u] = 2;
+            }
+        }
+    }
+    let mut pred: Vec<Vec<usize>> = vec![vec![]; n];
+    for u in 0..n {
+        for &v in &fwd[u] {
+            pred[v].push(u);
+        }
+    }
+
+    // longest-path layers (Kahn)
+    let mut layer = vec![0usize; n];
+    let mut indeg: Vec<usize> = pred.iter().map(|p| p.len()).collect();
+    let mut q: VecDeque<usize> = (0..n).filter(|&i| indeg[i] == 0).collect();
+    while let Some(u) = q.pop_front() {
+        for &v in &fwd[u] {
+            layer[v] = layer[v].max(layer[u] + 1);
+            indeg[v] -= 1;
+            if indeg[v] == 0 {
+                q.push_back(v);
+            }
+        }
+    }
+    let nl = layer.iter().copied().max().map_or(0, |m| m + 1);
+    let mut cols: Vec<Vec<usize>> = vec![vec![]; nl];
+    for i in 0..n {
+        cols[layer[i]].push(i);
+    }
+    for c in &mut cols {
+        c.sort_by_key(|&i| pre[i]);
+    }
+
+    // barycenter sweeps to cut crossings
+    let mut rank = vec![0usize; n];
+    let set_rank = |cols: &Vec<Vec<usize>>, rank: &mut Vec<usize>| {
+        for c in cols {
+            for (r, &i) in c.iter().enumerate() {
+                rank[i] = r;
+            }
+        }
+    };
+    set_rank(&cols, &mut rank);
+    for pass in 0..6 {
+        let down = pass % 2 == 0;
+        let range: Vec<usize> = if down { (1..nl).collect() } else { (0..nl.saturating_sub(1)).rev().collect() };
+        for l in range {
+            let nb = if down { &pred } else { &fwd };
+            let mut keyed: Vec<(f32, usize)> = cols[l]
+                .iter()
+                .map(|&i| {
+                    let b = if nb[i].is_empty() { rank[i] as f32 } else { nb[i].iter().map(|&j| rank[j] as f32).sum::<f32>() / nb[i].len() as f32 };
+                    (b, i)
+                })
+                .collect();
+            keyed.sort_by(|a, b| a.0.total_cmp(&b.0));
+            cols[l] = keyed.into_iter().map(|(_, i)| i).collect();
+            for (r, &i) in cols[l].iter().enumerate() {
+                rank[i] = r;
+            }
+        }
+    }
+
+    // y: stack column 0, then place each node at the middle of its neighbours, keeping order
+    let h = |i: usize| heights[&order[i]];
+    let mut y = vec![0f32; n];
+    for pass in 0..6 {
+        let down = pass % 2 == 0;
+        let range: Vec<usize> = if pass == 0 { (0..nl).collect() } else if down { (1..nl).collect() } else { (0..nl.saturating_sub(1)).rev().collect() };
+        for l in range {
+            let nb = if down || pass == 0 { &pred } else { &fwd };
+            let mut bottom = f32::NEG_INFINITY;
+            for &i in &cols[l] {
+                let want = if nb[i].is_empty() {
+                    if pass == 0 { bottom.max(0.0) } else { y[i] }
+                } else {
+                    nb[i].iter().map(|&j| y[j] + h(j) / 2.0).sum::<f32>() / nb[i].len() as f32 - h(i) / 2.0
+                };
+                y[i] = want.max(bottom);
+                bottom = y[i] + h(i) + GAP_Y;
+            }
+        }
+    }
+    let top = y.iter().copied().fold(f32::INFINITY, f32::min);
+    let top = if top.is_finite() { top } else { 0.0 };
+    order.iter().enumerate().map(|(i, k)| (k.clone(), Pos2::new(layer[i] as f32 * COL_W, y[i] - top))).collect()
+}
+
 fn push_unique(v: &mut Vec<String>, s: &str) -> usize {
     match v.iter().position(|x| x == s) {
         Some(i) => i,
@@ -228,52 +367,16 @@ impl IoGraph {
             wires.push((from, o, to, i, e.note.clone()));
         }
 
-        // layered layout: column = distance from the roots (nodes nobody fires)
-        let mut depth: HashMap<Key, usize> = HashMap::new();
-        let has_in: BTreeSet<Key> = wires.iter().map(|w| w.2.clone()).collect();
-        let mut q: VecDeque<Key> = VecDeque::new();
-        for k in &order {
-            if !has_in.contains(k) {
-                depth.insert(k.clone(), 0);
-                q.push_back(k.clone());
-            }
-        }
-        if q.is_empty() {
-            if let Some(k) = order.first() {
-                depth.insert(k.clone(), 0);
-                q.push_back(k.clone());
-            }
-        }
-        loop {
-            while let Some(k) = q.pop_front() {
-                let d = depth[&k];
-                for w in wires.iter().filter(|w| w.0 == k) {
-                    if !depth.contains_key(&w.2) {
-                        depth.insert(w.2.clone(), d + 1);
-                        q.push_back(w.2.clone());
-                    }
-                }
-            }
-            // cycles with no root
-            match order.iter().find(|k| !depth.contains_key(*k)) {
-                Some(k) => {
-                    depth.insert(k.clone(), 0);
-                    q.push_back(k.clone());
-                }
-                None => break,
-            }
-        }
+        let heights: HashMap<Key, f32> = order.iter().map(|k| (k.clone(), node_height(&nodes[k]))).collect();
+        let edge_keys: Vec<(Key, Key)> = wires.iter().map(|w| (w.0.clone(), w.2.clone())).collect();
+        let auto_pos = layout(&order, &edge_keys, &heights);
 
         // snarl
         self.snarl = Snarl::new();
         self.wire_notes.clear();
-        let mut rows: HashMap<usize, usize> = HashMap::new();
         let mut ids: HashMap<Key, NodeId> = HashMap::new();
         for k in &order {
-            let d = depth[k];
-            let row = rows.entry(d).or_insert(0);
-            let auto = Pos2::new(d as f32 * COL_W, *row as f32 * ROW_H);
-            *row += 1;
+            let auto = auto_pos[k];
             let pos = match k {
                 Key::Ent(id) => self.positions.get(id).copied().unwrap_or(auto),
                 Key::Ghost(_) => auto,
@@ -355,7 +458,7 @@ impl SnarlViewer<IoNode> for Viewer<'_> {
             Key::Ghost(_) => text = text.color(Color32::from_rgb(220, 90, 90)),
             _ => {}
         }
-        let r = ui.add(egui::Label::new(text).sense(egui::Sense::click()));
+        let r = ui.add(egui::Label::new(text).selectable(false).sense(egui::Sense::click()));
         if r.double_clicked() {
             if let Key::Ent(id) = n.key {
                 *self.picked = Some(id);
@@ -420,6 +523,20 @@ mod tests {
             assert_eq!((c.target.as_str(), c.input.as_str(), c.delay, c.times), ("door", "Open", 0.5, 1));
             assert_eq!(c.to_pair(), pair);
         }
+    }
+
+    #[test]
+    fn layout_is_a_tree() {
+        // a -> b, a -> c, b -> d, c -> d, d -> a (cycle must not hang)
+        let order: Vec<Key> = (1..=4).map(Key::Ent).collect();
+        let e = |a: u32, b: u32| (Key::Ent(a), Key::Ent(b));
+        let edges = vec![e(1, 2), e(1, 3), e(2, 4), e(3, 4), e(4, 1)];
+        let heights: HashMap<Key, f32> = order.iter().map(|k| (k.clone(), 80.0)).collect();
+        let p = layout(&order, &edges, &heights);
+        let (a, b, c, d) = (p[&Key::Ent(1)], p[&Key::Ent(2)], p[&Key::Ent(3)], p[&Key::Ent(4)]);
+        assert!(a.x < b.x && b.x == c.x && b.x < d.x);
+        assert!((b.y - c.y).abs() >= 80.0, "siblings overlap");
+        assert!(a.y > b.y.min(c.y) - 1.0 && a.y < b.y.max(c.y) + 1.0, "parent sits between children");
     }
 
     #[test]
