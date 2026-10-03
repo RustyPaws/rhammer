@@ -577,7 +577,22 @@ impl App {
         }
     }
 
+    /// Browser builds need the File System Access API (Chromium) to open or save maps.
+    pub fn file_io_ok() -> bool {
+        #[cfg(feature = "web")]
+        {
+            crate::platform::web_supported()
+        }
+        #[cfg(not(feature = "web"))]
+        {
+            true
+        }
+    }
+
     pub fn save(&mut self) -> bool {
+        if !Self::file_io_ok() {
+            return false;
+        }
         match self.doc.path.clone() {
             Some(p) => self.save_to(&p),
             None => self.save_as(),
@@ -930,10 +945,10 @@ impl App {
             if pressed(Key::Y) {
                 self.redo();
             }
-            if pressed(Key::S) {
+            if pressed(Key::S) && Self::file_io_ok() {
                 if shift { self.save_as(); } else { self.save(); }
             }
-            if pressed(Key::O) {
+            if pressed(Key::O) && Self::file_io_ok() {
                 self.request(PendingAction::Open(None));
             }
             if pressed(Key::N) {
@@ -1027,7 +1042,9 @@ impl App {
                     self.request(PendingAction::New);
                     ui.close();
                 }
-                if ui.button("Open...        Ctrl+O").clicked() {
+                let io_ok = Self::file_io_ok();
+                const NEEDS_CHROMIUM: &str = "Needs a Chromium browser (Chrome, Edge)";
+                if ui.add_enabled(io_ok, egui::Button::new("Open...        Ctrl+O")).on_disabled_hover_text(NEEDS_CHROMIUM).clicked() {
                     self.request(PendingAction::Open(None));
                     ui.close();
                 }
@@ -1041,11 +1058,11 @@ impl App {
                     }
                     ui.separator();
                 }
-                if ui.button("Save         Ctrl+S").clicked() {
+                if ui.add_enabled(io_ok, egui::Button::new("Save         Ctrl+S")).on_disabled_hover_text(NEEDS_CHROMIUM).clicked() {
                     self.save();
                     ui.close();
                 }
-                if ui.button("Save As...     Ctrl+Shift+S").clicked() {
+                if ui.add_enabled(io_ok, egui::Button::new("Save As...     Ctrl+Shift+S")).on_disabled_hover_text(NEEDS_CHROMIUM).clicked() {
                     self.save_as();
                     ui.close();
                 }
