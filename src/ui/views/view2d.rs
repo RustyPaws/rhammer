@@ -363,7 +363,7 @@ impl App {
         let origin_marker: Option<(u32, DVec3)> = (self.tool == Tool::Select && self.sel.len() == 1)
             .then(|| self.sel.iter().next().copied())
             .flatten()
-            .and_then(|id| self.doc.entity(id).filter(|e| !e.solids.is_empty()).map(|e| (id, e)))
+            .and_then(|id| self.doc.entity(id).filter(|e| !e.solids.is_empty() && (e.get("origin").is_some() || crate::editor::doc::class_has_origin(&self.fgd, e.classname()))).map(|e| (id, e)))
             .map(|(id, e)| {
                 let (a, b) = self.doc.ent_bounds(e, &self.fgd);
                 (id, if e.get("origin").is_some() { e.origin() } else { (a + b) * 0.5 })

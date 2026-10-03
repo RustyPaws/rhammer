@@ -363,6 +363,9 @@ impl App {
                 Edit::Set(k, v) => {
                     self.doc.set_prop(&ids, &k, &v);
                     if k.eq_ignore_ascii_case("classname") {
+                        for id in targets {
+                            self.doc.default_brush_origin(*id, &self.fgd);
+                        }
                         // refresh the editor color for the new class
                         if let Some(c) = self.fgd.get(&v).and_then(|c| c.color) {
                             for id in targets {
