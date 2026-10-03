@@ -1,6 +1,7 @@
 //! `gameinfo.txt` -> `FileSystem` -> `SearchPaths`: which directories and VPK archives a
 //! game mounts, in priority order (first entry wins).
 
+use crate::assets::steam::SteamLibraries;
 use crate::kv::{self as kv, NodeList, Value};
 use crate::platform::Vfs;
 use std::path::{Path, PathBuf};
@@ -44,8 +45,11 @@ pub fn parse_entries(root: &[kv::Node]) -> Vec<RawEntry> {
 
 /// Resolves entries to mounts. `game_dir` is the folder holding `gameinfo.txt`
 /// (`|gameinfo_path|`); other relative paths are relative to its parent (the engine root).
+/// `|appid_<id>|path` entries (used by the SDK template mods to mount TF2 / HL2 content) are
+/// relative to the install folder of that Steam app; they are skipped if it is not installed.
 pub fn resolve(vfs: &dyn Vfs, entries: &[RawEntry], game_dir: &Path) -> Vec<Mount> {
     let root = game_dir.parent().unwrap_or(game_dir);
+    let mut steam: Option<SteamLibraries> = None;
     let mut out: Vec<Mount> = Vec::new();
     let mut push = |m: Mount| {
         if !out.contains(&m) {
@@ -55,12 +59,17 @@ pub fn resolve(vfs: &dyn Vfs, entries: &[RawEntry], game_dir: &Path) -> Vec<Moun
     for e in entries {
         let p = e.path.replace('\\', "/");
         let (base, rest) = if let Some(r) = strip_macro(&p, "|gameinfo_path|") {
-            (game_dir, r)
+            (game_dir.to_path_buf(), r)
         } else if let Some(r) = strip_macro(&p, "|all_source_engine_paths|") {
-            (root, r)
+            (root.to_path_buf(), r)
+        } else if let Some((id, r)) = split_appid_macro(&p) {
+            let libs = steam.get_or_insert_with(|| SteamLibraries::discover(vfs, game_dir));
+            let Some(dir) = libs.install_dir(vfs, id) else { continue };
+            (dir, r)
         } else {
-            (root, p.as_str())
+            (root.to_path_buf(), p.as_str())
         };
+        let base = base.as_path();
         let rest = rest.trim_start_matches('/');
         if rest.to_ascii_lowercase().ends_with(".vpk") {
             let stem = rest[..rest.len() - 4].trim_end_matches("_dir");
@@ -87,6 +96,16 @@ pub fn resolve(vfs: &dyn Vfs, entries: &[RawEntry], game_dir: &Path) -> Vec<Moun
 
 fn strip_macro<'a>(p: &'a str, mac: &str) -> Option<&'a str> {
     (p.len() >= mac.len() && p[..mac.len()].eq_ignore_ascii_case(mac)).then(|| &p[mac.len()..])
+}
+
+/// Splits `|appid_<id>|rest` into the app id and `rest`.
+fn split_appid_macro(p: &str) -> Option<(u32, &str)> {
+    const PREFIX: &str = "|appid_";
+    if !p.get(..PREFIX.len())?.eq_ignore_ascii_case(PREFIX) {
+        return None;
+    }
+    let (id, rest) = p[PREFIX.len()..].split_once('|')?;
+    Some((id.trim().parse().ok()?, rest))
 }
 
 /// Reads `<game_dir>/gameinfo.txt` and returns its mounts (empty if missing or malformed).

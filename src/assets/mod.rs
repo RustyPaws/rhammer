@@ -4,6 +4,7 @@ pub mod gamefs;
 pub mod materials;
 pub mod mdl;
 pub mod searchpaths;
+pub mod steam;
 pub mod vpk;
 
 pub use gamefs::GameFs;

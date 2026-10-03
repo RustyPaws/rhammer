@@ -18,7 +18,8 @@
 - **Origin editing** – drag the origin marker of a selected brush entity in 2D views; new brush entities get their origin at the centre of their brushes.
 - **Editing tools** – Select, Block, Entity, Clip, Vertex and Texture application tools, plus Transform, Make hollow, Tie to entity, Move to world, Rotate and Mirror, texture lock, and undo/redo.
 - **2D and 3D viewports** – 4-view layout, grid, wireframe mode, entity names, frame selection / frame all, Hammer-style selection/block dimensions in 2D views, selected objects drawn on top.
-- **Asset loading** – game files are mounted from the `SearchPaths` of `gameinfo.txt`; VPK archives, VTF textures (including transparent textures flagged in VMT), and MDL models (with VVD/VTX/ANI).
+- **Asset loading** – game files are mounted from the `SearchPaths` of `gameinfo.txt` (including `|appid_<id>|` paths, as used by the SDK template mods `mod_tf`/`mod_hl2mp`); VPK archives, VTF textures (including transparent textures flagged in VMT), and MDL models (with VVD/VTX/ANI).
+  - `|appid_<id>|` is resolved through the Steam libraries: the `steamapps` folder above the mod, the default Steam install locations, then `RHAMMER_STEAM_DIR`, plus every library listed in `libraryfolders.vdf`. **`RHAMMER_STEAM_DIR` (the Steam folder that contains `steamapps`) is a temporary workaround**; it will be replaced by reading the Steam path from the registry.
 - **Texture browser and model viewer** – browse textures, orbit and pan (right/middle drag) textured models, play sequences, show bones and attachments; the model viewer also works as a picker for `studio` keys.
 - **Map compilation** – runs `vbsp` → `vvis` → `vrad`, copies the BSP and launches the game, with a live compile log (Map → Run map…).
 - **Find, copy/paste, duplicate** and other everyday editing operations.
