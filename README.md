@@ -2,7 +2,7 @@
 
 **English** | [Русский](README.ru.md)
 
-> 🤖 This projected was created with Claude AI (Anthropic).
+> 🤖 This project was created with Claude AI (Anthropic), mostly as an experiment to test what AI can do. It is not meant to compete with anyone.
 
 **rhammer** is a Valve Hammer-style level editor for Source engine maps, written in Rust with [egui](https://github.com/emilk/egui). It reads and writes `.vmf` files and uses Hammer-like game configurations (FGD entity definitions, compile tools), so it fits into the familiar Source mapping workflow.
 
@@ -79,4 +79,6 @@ Pushing a tag like `v0.1.0` triggers the release workflow, which builds and publ
 
 ## License
 
-No license has been specified yet.
+Released under the [MIT License](LICENSE.txt).
+
+rhammer is an independent, non-commercial experiment and is not affiliated with or endorsed by Valve. "Hammer" and "Source" are trademarks of Valve Corporation.
