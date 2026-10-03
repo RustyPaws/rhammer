@@ -54,12 +54,51 @@ pub struct Entity {
     pub id: u32,
     /// Ordered key/value pairs, excluding `id`.
     pub props: Vec<(String, String)>,
-    /// `connections` block entries: (output name, "target,input,param,delay,times").
-    pub connections: Vec<(String, String)>,
+    /// Entity I/O: the `connections` block.
+    pub connections: Vec<Connection>,
     pub solids: Vec<Solid>,
     pub editor: Vec<Node>,
     pub hidden: bool,
     pub extra: Vec<Node>,
+}
+
+/// Parsed form of one `connections` entry. Newer branches (Portal 2, L4D2, CS:GO) separate
+/// the fields with ESC instead of ','.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Connection {
+    pub output: String,
+    pub target: String,
+    pub input: String,
+    pub param: String,
+    pub delay: f64,
+    /// Times to fire; -1 means unlimited.
+    pub times: i32,
+    pub sep: char,
+}
+
+impl Connection {
+    /// Fresh `OnTrigger -> Trigger` connection using the given field separator.
+    pub fn new(sep: char) -> Connection {
+        Connection { output: "OnTrigger".into(), target: String::new(), input: "Trigger".into(), param: String::new(), delay: 0.0, times: -1, sep }
+    }
+
+    pub fn parse((output, value): &(String, String)) -> Connection {
+        let sep = if value.contains('\x1b') { '\x1b' } else { ',' };
+        let mut it = value.splitn(5, sep);
+        let mut next = || it.next().unwrap_or("").to_string();
+        let target = next();
+        let input = next();
+        let param = next();
+        let delay = next().trim().parse().unwrap_or(0.0);
+        let times = next().trim().parse().unwrap_or(-1);
+        Connection { output: output.clone(), target, input, param, delay, times, sep }
+    }
+
+    pub fn to_pair(&self) -> (String, String) {
+        let s = self.sep;
+        let v = format!("{}{s}{}{s}{}{s}{}{s}{}", self.target, self.input, self.param, fmt(self.delay), self.times);
+        (self.output.clone(), v)
+    }
 }
 
 #[derive(Clone, Debug, Default)]
@@ -191,7 +230,7 @@ impl Entity {
                 ("connections", Value::Block(c)) => {
                     for cn in c {
                         if let Some(v) = cn.as_str() {
-                            e.connections.push((cn.key.clone(), v.to_string()));
+                            e.connections.push(Connection::parse(&(cn.key.clone(), v.to_string())));
                         }
                     }
                 }
@@ -218,7 +257,13 @@ impl Entity {
         if !self.connections.is_empty() {
             c.push(Node::block(
                 "connections",
-                self.connections.iter().map(|(k, v)| Node::str(k.clone(), v.clone())).collect(),
+                self.connections
+                    .iter()
+                    .map(|c| {
+                        let (k, v) = c.to_pair();
+                        Node::str(k, v)
+                    })
+                    .collect(),
             ));
         }
         for s in self.solids.iter().filter(|s| !s.hidden) {

@@ -66,6 +66,7 @@ pub struct Windows {
     pub find: bool,
     pub about: bool,
     pub map_props: bool,
+    pub io_graph: bool,
     pub quit_confirm: bool,
     pub pending_action: Option<PendingAction>,
 }
@@ -121,6 +122,7 @@ pub struct App {
     pub hover_world: Option<DVec3>,
     pub new_visgroup: String,
     pub find_text: String,
+    pub io_graph: crate::ui::io_graph::IoGraph,
     pub transform_dlg: TransformDlg,
     pub hollow_thickness: f64,
     pub last_prop_edit: Option<(String, std::time::Instant)>,
@@ -221,6 +223,7 @@ impl App {
             hover_world: None,
             new_visgroup: String::new(),
             find_text: String::new(),
+            io_graph: Default::default(),
             transform_dlg: TransformDlg { mv: [0.0; 3], rot: [0.0; 3], scale: [1.0; 3] },
             hollow_thickness: 16.0,
             last_prop_edit: None,
@@ -930,6 +933,10 @@ impl App {
                 }
                 if ui.button("Model viewer...").clicked() {
                     self.win.model_viewer = true;
+                    ui.close();
+                }
+                if ui.button("Entity I/O graph...").clicked() {
+                    self.win.io_graph = true;
                     ui.close();
                 }
             });

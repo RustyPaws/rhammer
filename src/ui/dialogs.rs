@@ -54,6 +54,7 @@ impl App {
         self.dlg_model_viewer(ctx);
         self.dlg_transform(ctx);
         self.dlg_find(ctx);
+        self.dlg_io_graph(ctx);
         self.dlg_map_props(ctx);
         self.dlg_about(ctx);
     }
@@ -436,6 +437,25 @@ impl App {
         });
         if !open {
             self.win.find = false;
+        }
+        if let Some(id) = pick {
+            self.set_sel([id].into_iter().collect());
+            self.frame_selection();
+            self.tab = RightTab::Object;
+        }
+    }
+
+    fn dlg_io_graph(&mut self, ctx: &egui::Context) {
+        if !self.win.io_graph {
+            return;
+        }
+        let mut open = true;
+        let mut pick: Option<u32> = None;
+        egui::Window::new("Entity I/O graph").open(&mut open).default_size([900.0, 600.0]).show(ctx, |ui| {
+            pick = self.io_graph.show(ui, &self.doc.map, self.doc.version, &self.sel, self.sel_stamp);
+        });
+        if !open {
+            self.win.io_graph = false;
         }
         if let Some(id) = pick {
             self.set_sel([id].into_iter().collect());

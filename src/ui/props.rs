@@ -182,7 +182,7 @@ impl App {
 
     pub fn entity_editor(&mut self, ui: &mut egui::Ui, e: &Entity, targets: &Sel, is_world: bool) {
         let mut edits: Vec<Edit> = vec![];
-        let mut new_conns: Option<Vec<(String, String)>> = None;
+        let mut new_conns: Option<Vec<vmf::Connection>> = None;
         let mut pick_model: Option<(String, String)> = None;
         let class_name = e.classname().to_string();
         let class = self.fgd.get(&class_name).cloned();
@@ -401,22 +401,16 @@ impl App {
                 let mut conns = e.connections.clone();
                 let mut changed = false;
                 let mut remove: Option<usize> = None;
-                for (i, (out, val)) in conns.iter_mut().enumerate() {
-                    // newer branches (Portal 2, L4D2, CS:GO) separate fields with ESC instead of ','
-                    let sep = if val.contains('\x1b') { '\x1b' } else { ',' };
-                    let mut parts: Vec<String> = val.splitn(5, sep).map(|s| s.to_string()).collect();
-                    while parts.len() < 5 {
-                        parts.push(if parts.len() == 3 { "0".into() } else if parts.len() == 4 { "-1".into() } else { String::new() });
-                    }
+                for (i, c) in conns.iter_mut().enumerate() {
                     ui.group(|ui| {
                         ui.horizontal(|ui| {
                             ui.label("When");
                             let outs: Vec<String> = class.as_ref().map(|c| c.outputs.iter().map(|o| o.name.clone()).collect()).unwrap_or_default();
-                            changed |= ui.add(egui::TextEdit::singleline(out).desired_width(110.0)).changed();
+                            changed |= ui.add(egui::TextEdit::singleline(&mut c.output).desired_width(110.0)).changed();
                             ui.menu_button("v", |ui| {
                                 for o in outs {
                                     if ui.button(&o).clicked() {
-                                        *out = o;
+                                        c.output = o;
                                         changed = true;
                                         ui.close();
                                     }
@@ -428,12 +422,12 @@ impl App {
                         });
                         ui.horizontal(|ui| {
                             ui.label("fires");
-                            changed |= ui.add(egui::TextEdit::singleline(&mut parts[0]).hint_text("target").desired_width(100.0)).changed();
+                            changed |= ui.add(egui::TextEdit::singleline(&mut c.target).hint_text("target").desired_width(100.0)).changed();
                             ui.menu_button("v", |ui| {
                                 egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                                     for t in &tnames {
                                         if ui.button(t).clicked() {
-                                            parts[0] = t.clone();
+                                            c.target = t.clone();
                                             changed = true;
                                             ui.close();
                                         }
@@ -443,9 +437,9 @@ impl App {
                         });
                         ui.horizontal(|ui| {
                             ui.label("input");
-                            changed |= ui.add(egui::TextEdit::singleline(&mut parts[1]).desired_width(100.0)).changed();
+                            changed |= ui.add(egui::TextEdit::singleline(&mut c.input).desired_width(100.0)).changed();
                             // inputs of the target's class
-                            let target_class = self.doc.map.entities.iter().find(|x| x.get("targetname") == Some(parts[0].as_str())).map(|x| x.classname().to_string());
+                            let target_class = self.doc.map.entities.iter().find(|x| x.get("targetname") == Some(c.target.as_str())).map(|x| x.classname().to_string());
                             let inputs: Vec<String> = target_class
                                 .and_then(|c| self.fgd.get(&c))
                                 .map(|c| c.inputs.iter().map(|i| i.name.clone()).collect())
@@ -454,7 +448,7 @@ impl App {
                                 egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                                     for inp in inputs {
                                         if ui.button(&inp).clicked() {
-                                            parts[1] = inp;
+                                            c.input = inp;
                                             changed = true;
                                             ui.close();
                                         }
@@ -464,29 +458,23 @@ impl App {
                         });
                         ui.horizontal(|ui| {
                             ui.label("param");
-                            changed |= ui.add(egui::TextEdit::singleline(&mut parts[2]).desired_width(80.0)).changed();
-                            let mut delay: f64 = parts[3].parse().unwrap_or(0.0);
-                            if ui.add(egui::DragValue::new(&mut delay).prefix("delay ").speed(0.05).range(0.0..=3600.0)).changed() {
-                                parts[3] = vmf::fmt(delay);
-                                changed = true;
-                            }
-                            let mut once = parts[4] == "1";
+                            changed |= ui.add(egui::TextEdit::singleline(&mut c.param).desired_width(80.0)).changed();
+                            changed |= ui.add(egui::DragValue::new(&mut c.delay).prefix("delay ").speed(0.05).range(0.0..=3600.0)).changed();
+                            let mut once = c.times == 1;
                             if ui.checkbox(&mut once, "once").changed() {
-                                parts[4] = if once { "1".into() } else { "-1".into() };
+                                c.times = if once { 1 } else { -1 };
                                 changed = true;
                             }
                         });
                     });
-                    *val = parts.join(&sep.to_string());
                 }
                 if let Some(i) = remove {
                     conns.remove(i);
                     changed = true;
                 }
                 if ui.button("+ Add output").clicked() {
-                    let esc = self.doc.map.entities.iter().flat_map(|x| &x.connections).any(|(_, v)| v.contains('\x1b'));
-                    let v = if esc { "\x1bTrigger\x1b\x1b0\x1b-1" } else { ",Trigger,,0,-1" };
-                    conns.push(("OnTrigger".into(), v.into()));
+                    let esc = self.doc.map.entities.iter().flat_map(|x| &x.connections).any(|c| c.sep == '\x1b');
+                    conns.push(vmf::Connection::new(if esc { '\x1b' } else { ',' }));
                     changed = true;
                 }
                 if changed {
