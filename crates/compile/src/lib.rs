@@ -1,6 +1,6 @@
 //! Map compilation: vbsp -> vvis -> vrad -> copy bsp -> launch game, run on a worker thread.
 
-use crate::config::{CompileSettings, GameConfig};
+use rhammer_config::{CompileSettings, GameConfig};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -168,14 +168,14 @@ pub fn split_args(s: &str) -> Vec<String> {
     out
 }
 
-pub fn start(game: GameConfig, cs: CompileSettings, vmf: PathBuf, ctx: eframe::egui::Context) -> CompileJob {
+pub fn start(game: GameConfig, cs: CompileSettings, vmf: PathBuf, on_update: impl Fn() + Send + 'static) -> CompileJob {
     let (tx, rx) = channel();
     let cancel = Arc::new(AtomicBool::new(false));
     let c2 = cancel.clone();
     std::thread::spawn(move || {
         let ok = run(&game, &cs, &vmf, &tx, &c2);
         let _ = tx.send(Msg::Done(ok));
-        ctx.request_repaint();
+        on_update();
     });
     CompileJob { rx, log: vec![], running: true, ok: false, cancel }
 }

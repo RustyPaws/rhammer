@@ -2,8 +2,8 @@
 //! sequences, show bones and attachments. Doubles as the model picker for `studio` keys.
 
 use crate::app::App;
-use crate::doc::Sel;
-use crate::mdl::{self, Model};
+use rhammer_core::doc::Sel;
+use rhammer_assets::mdl::{self, Model};
 use crate::render3d::{self, Batch, Vertex};
 use eframe::egui::{self, Color32, Pos2, RichText, Sense, Stroke};
 use glam::{DMat4, Mat4, Vec3, Vec4};

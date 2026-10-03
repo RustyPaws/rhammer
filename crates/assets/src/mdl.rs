@@ -1,7 +1,7 @@
 //! Source studio model loader (MDL v44-49 + VVD + VTX v7 + ANI). Produces a LOD0 triangle mesh
 //! grouped by material, the skeleton and the sequence list, and can pose the mesh at any frame.
 
-use crate::assets::GameFs;
+use crate::gamefs::GameFs;
 use glam::{DMat4, DQuat, DVec3};
 
 #[derive(Clone, Copy, Default)]

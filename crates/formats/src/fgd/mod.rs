@@ -1,5 +1,8 @@
 //! FGD (Forge Game Data) parser: entity definitions, properties, choices, flags, I/O.
 
+mod lexer;
+
+use lexer::{tokenize, T};
 use glam::DVec3;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -59,47 +62,8 @@ pub struct Fgd {
     pub classes: HashMap<String, EntityClass>,
     /// Sorted class names for UI listing.
     pub names: Vec<String>,
-}
-
-#[derive(Debug, Clone, PartialEq)]
-enum T {
-    Id(String),
-    Str(String),
-    Sym(char),
-}
-
-fn tokenize(src: &str) -> Vec<T> {
-    let b: Vec<char> = src.chars().collect();
-    let mut i = 0;
-    let mut out = Vec::new();
-    while i < b.len() {
-        let c = b[i];
-        if c.is_whitespace() {
-            i += 1;
-        } else if c == '/' && i + 1 < b.len() && b[i + 1] == '/' {
-            while i < b.len() && b[i] != '\n' {
-                i += 1;
-            }
-        } else if c == '"' {
-            i += 1;
-            let st = i;
-            while i < b.len() && b[i] != '"' {
-                i += 1;
-            }
-            out.push(T::Str(b[st..i].iter().collect()));
-            i += 1;
-        } else if "()[]{}=:,+@".contains(c) {
-            out.push(T::Sym(c));
-            i += 1;
-        } else {
-            let st = i;
-            while i < b.len() && !b[i].is_whitespace() && !"()[]{}=:,+@\"".contains(b[i]) {
-                i += 1;
-            }
-            out.push(T::Id(b[st..i].iter().collect()));
-        }
-    }
-    out
+    /// Problems found while loading (unreadable includes, lexical errors), as `file:line:col: message`.
+    pub diagnostics: Vec<String>,
 }
 
 struct P<'a> {
@@ -194,9 +158,19 @@ impl Fgd {
             return;
         }
         seen.push(canon);
-        let Ok(bytes) = std::fs::read(path) else { return };
+        let bytes = match std::fs::read(path) {
+            Ok(b) => b,
+            Err(e) => {
+                self.diagnostics.push(format!("{}: cannot read file: {e}", path.display()));
+                return;
+            }
+        };
         let text = String::from_utf8_lossy(&bytes).into_owned();
-        let toks = tokenize(&text);
+        let (spanned, errors) = tokenize(&text);
+        for e in errors {
+            self.diagnostics.push(format!("{}:{}:{}: {}", path.display(), e.line, e.col, e.msg));
+        }
+        let toks: Vec<T> = spanned.into_iter().map(|(t, _)| t).collect();
         let mut p = P { t: &toks, i: 0 };
         while let Some(t) = p.next() {
             if t != T::Sym('@') {

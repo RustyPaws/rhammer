@@ -69,13 +69,14 @@ sudo apt-get install -y libgtk-3-dev libxkbcommon-dev libwayland-dev libx11-dev 
 
 | Файл | Назначение |
 |---|---|
-| `src/main.rs`, `src/app.rs` | Точка входа, интерфейс, меню, горячие клавиши |
-| `src/views.rs`, `src/render3d.rs` | 2D/3D-вьюпорты и рендеринг |
-| `src/doc.rs`, `src/vmf.rs`, `src/geom.rs`, `src/instances.rs` | Документ карты, ввод/вывод VMF, геометрия брашей, инстансы |
-| `src/fgd.rs`, `src/config.rs`, `src/kv.rs` | Парсер FGD, игровые конфигурации, парсер KeyValues |
-| `src/props.rs`, `src/dialogs.rs` | Редакторы свойств и диалоги |
-| `src/compile.rs` | Конвейер компиляции карты |
-| `src/assets.rs`, `src/vpk.rs`, `src/vtf.rs`, `src/mdl.rs`, `src/model_viewer.rs` | Загрузка игровых ресурсов и просмотрщик моделей |
+| `crates/kv` | Лексер KeyValues (logos), парсер с ошибками по строке/колонке, запись |
+| `crates/config` | Игровые конфигурации, настройки компиляции, сохранение настроек, импорт Hammer `GameConfig.txt` |
+| `crates/formats` | Форматы VMF, FGD (лексер logos + парсер) и VTF |
+| `crates/assets` | Файловая система игры (файлы + VPK), материалы, модели MDL |
+| `crates/core` | Модель редактора без UI: документ, геометрия брашей, инстансы |
+| `crates/compile` | Конвейер компиляции карты (vbsp / vvis / vrad / запуск) |
+| `src/app.rs`, `src/render3d.rs` | Состояние приложения, меню, горячие клавиши, OpenGL-рендерер |
+| `src/ui/` | Вьюпорты, редакторы свойств, диалоги, просмотрщик моделей |
 
 ## Лицензия
 

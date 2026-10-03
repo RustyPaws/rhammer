@@ -69,13 +69,14 @@ Pushing a tag like `v0.1.0` triggers the release workflow, which builds and publ
 
 | File | Purpose |
 |---|---|
-| `src/main.rs`, `src/app.rs` | Application entry point, UI, menus, hotkeys |
-| `src/views.rs`, `src/render3d.rs` | 2D / 3D viewports and rendering |
-| `src/doc.rs`, `src/vmf.rs`, `src/geom.rs`, `src/instances.rs` | Map document, VMF I/O, brush geometry, instances |
-| `src/fgd.rs`, `src/config.rs`, `src/kv.rs` | FGD parser, game configurations, KeyValues parser |
-| `src/props.rs`, `src/dialogs.rs` | Property editors and dialogs |
-| `src/compile.rs` | Map compilation pipeline |
-| `src/assets.rs`, `src/vpk.rs`, `src/vtf.rs`, `src/mdl.rs`, `src/model_viewer.rs` | Game asset loading and the model viewer |
+| `crates/kv` | KeyValues lexer (logos), parser with line/column errors, writer |
+| `crates/config` | Game configurations, compile settings, persisted settings, Hammer `GameConfig.txt` import |
+| `crates/formats` | VMF, FGD (logos lexer + parser) and VTF formats |
+| `crates/assets` | Game file system (loose files + VPK), materials, MDL models |
+| `crates/core` | UI-independent editor model: document, brush geometry, instances |
+| `crates/compile` | Map compilation pipeline (vbsp / vvis / vrad / launch) |
+| `src/app.rs`, `src/render3d.rs` | Application state, menus, hotkeys, OpenGL renderer |
+| `src/ui/` | Viewports, property editors, dialogs, model viewer |
 
 ## License
 

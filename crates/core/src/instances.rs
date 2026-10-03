@@ -2,7 +2,7 @@
 
 use crate::doc::angles_matrix;
 use crate::geom::{Plane, SolidGeo};
-use crate::vmf::{Map, Solid, TexAxis};
+use rhammer_formats::vmf::{Map, Solid, TexAxis};
 use glam::{DMat3, DVec3};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};

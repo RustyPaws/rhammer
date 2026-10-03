@@ -1,0 +1,11 @@
+[package]
+name = "rhammer-formats"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[dependencies]
+rhammer-kv = { path = "../kv" }
+anyhow = { workspace = true }
+logos = { workspace = true }
+glam = { workspace = true }

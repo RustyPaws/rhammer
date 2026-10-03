@@ -1,9 +1,9 @@
 //! Modal-ish windows: game configurations, run map, compile log, transform, find, etc.
 
 use crate::app::*;
-use crate::compile::Level;
-use crate::config::GameConfig;
-use crate::doc::{Sel, Xform};
+use rhammer_compile::Level;
+use rhammer_config::GameConfig;
+use rhammer_core::doc::{Sel, Xform};
 use eframe::egui::{self, Color32, RichText};
 use glam::{DQuat, DVec3};
 
@@ -132,7 +132,7 @@ impl App {
                 ui.separator();
                 if ui.button("Import Hammer GameConfig.txt…").clicked() {
                     if let Some(p) = rfd::FileDialog::new().add_filter("GameConfig", &["txt"]).pick_file() {
-                        match crate::config::import_hammer(&p) {
+                        match rhammer_config::import_hammer(&p) {
                             Ok(list) => {
                                 let n = list.len();
                                 self.settings.games.extend(list);

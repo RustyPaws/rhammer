@@ -1,7 +1,7 @@
 //! VMF document model. Anything we do not understand is stored as raw KeyValues
 //! nodes and written back untouched, so files stay compatible with Hammer / Hammer++.
 
-use crate::kv::{self, Node, NodeList, Value};
+use rhammer_kv::{self as kv, Node, NodeList, Value};
 use anyhow::{Context, Result};
 use glam::DVec3;
 
