@@ -115,7 +115,7 @@ impl App {
                     }
                 });
             });
-            egui::Panel::left("gcfg_list").resizable(false).default_size(190.0).show(ui, |ui| {
+            egui::Panel::left("gcfg_list").resizable(false).exact_size(200.0).show(ui, |ui| {
                 ui.label(RichText::new("Configurations").strong());
                 egui::ScrollArea::vertical().id_salt("gcfg_names").max_height(220.0).show(ui, |ui| {
                     for (i, g) in self.settings.games.iter().enumerate() {
