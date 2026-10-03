@@ -23,7 +23,18 @@ pub struct GameConfig {
     pub bsp_dir: String,
     pub prefab_dir: String,
     pub cordon_texture: String,
+    /// Keys of the game block (besides `GameDir`/`Hammer`) kept verbatim so an import loses nothing.
+    pub extra: Vec<Node>,
+    /// Unrecognised keys of the `Hammer` block (e.g. `MaterialExclusions`), kept verbatim.
+    pub hammer_extra: Vec<Node>,
 }
+
+/// Keys of the `Hammer` block that map to typed fields.
+const KNOWN_HAMMER: [&str; 16] = [
+    "TextureFormat", "MapFormat", "GameExe", "GameExeDir", "DefaultSolidEntity", "DefaultPointEntity", "BSP", "Vis",
+    "Light", "MapDir", "BSPDir", "PrefabDir", "CordonTexture", "DefaultTextureScale", "DefaultLightmapScale",
+    "MaterialExcludeCount",
+];
 
 impl Default for GameConfig {
     fn default() -> Self {
@@ -44,6 +55,8 @@ impl Default for GameConfig {
             light_exe: String::new(),
             map_dir: String::new(),
             bsp_dir: String::new(),
+            extra: vec![],
+            hammer_extra: vec![],
             prefab_dir: String::new(),
             cordon_texture: "tools\\toolsskybox".into(),
         }
@@ -51,9 +64,20 @@ impl Default for GameConfig {
 }
 
 impl GameConfig {
-    pub(crate) fn from_nodes(name: &str, game_dir: Option<String>, hammer: &[Node]) -> GameConfig {
+    /// Builds a config from the `Hammer` block and the remaining keys of the game block.
+    pub(crate) fn from_block(name: &str, game_dir: Option<String>, hammer: &[Node], extra: &[Node]) -> GameConfig {
         let mut g = GameConfig { name: name.to_string(), ..Default::default() };
         g.game_dir = game_dir.unwrap_or_default();
+        g.extra = extra.to_vec();
+        g.hammer_extra = hammer
+            .iter()
+            .filter(|n| {
+                let k = n.key.as_str();
+                !KNOWN_HAMMER.iter().any(|x| x.eq_ignore_ascii_case(k))
+                    && !(k.len() > 8 && k[..8].eq_ignore_ascii_case("GameData") && k[8..].chars().all(|c| c.is_ascii_digit()))
+            })
+            .cloned()
+            .collect();
         for i in 0..16 {
             if let Some(f) = s(hammer, &format!("GameData{i}")) {
                 g.fgds.push(f);
@@ -114,7 +138,11 @@ impl GameConfig {
         for (k, v) in pairs {
             h.push(Node::str(k, v));
         }
-        h.push(Node::str("MaterialExcludeCount", "0"));
+        if !self.hammer_extra.iter().any(|n| n.key.eq_ignore_ascii_case("MaterialExcludeCount")) {
+            h.push(Node::str("MaterialExcludeCount", "0"));
+        }
+        h.extend(self.hammer_extra.iter().cloned());
+        c.extend(self.extra.iter().cloned());
         c.push(Node::block("Hammer", h));
         Node::block(format!("\"{}\"", self.name), c)
     }

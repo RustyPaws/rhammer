@@ -181,6 +181,9 @@ impl App {
                                 });
                                 if let Some(h) = &handle {
                                     self.thumb_tex.insert(name.clone(), h.clone());
+                                } else if self.mats.loading() {
+                                    // still fetching: try again next frame
+                                    return None;
                                 } else {
                                     // remember failures as a 1x1 placeholder to avoid retrying every frame
                                     let img = egui::ColorImage::filled([1, 1], Color32::from_gray(40));

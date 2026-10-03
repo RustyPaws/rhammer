@@ -33,3 +33,16 @@ jobs:
         with:
           key: ${{ matrix.name }}
       - run: cargo build --release --locked
+
+  web:
+    name: check (web)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web
+      - run: cargo check --locked --target wasm32-unknown-unknown --no-default-features --features web

@@ -13,11 +13,11 @@ use crate::editor::doc::{angles_matrix, entity_model};
 use crate::editor::geom::{Plane, SolidGeo};
 use crate::formats::fgd::Fgd;
 use crate::formats::vmf::{Map, Solid, TexAxis};
+use crate::platform::{SharedVfs, Vfs};
 use glam::{DMat3, DVec3};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
-use std::time::SystemTime;
 
 /// Maximum nesting of instances inside instances.
 const MAX_DEPTH: usize = 16;
@@ -62,7 +62,7 @@ pub struct InstGeo {
 }
 
 struct CacheEntry {
-    modified: Option<SystemTime>,
+    modified: Option<u64>,
     /// `None` if the file failed to parse.
     map: Option<Rc<Map>>,
 }
@@ -70,6 +70,7 @@ struct CacheEntry {
 /// Loaded instance VMFs, keyed by canonical path. Entries are reloaded when the file changes on disk.
 #[derive(Default)]
 pub struct InstCache {
+    vfs: Option<SharedVfs>,
     files: HashMap<PathBuf, CacheEntry>,
     /// number of files that may still be (re)loaded in this pass
     pub budget: i32,
@@ -78,12 +79,22 @@ pub struct InstCache {
 }
 
 impl InstCache {
+    pub fn new(vfs: SharedVfs) -> InstCache {
+        InstCache { vfs: Some(vfs), ..Default::default() }
+    }
+
+    /// File access used to resolve and load instance files.
+    fn vfs(&self) -> Option<SharedVfs> {
+        self.vfs.clone()
+    }
+
     pub fn clear(&mut self) {
         self.files.clear();
     }
 
     fn load(&mut self, path: &Path) -> Option<Rc<Map>> {
-        let modified = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+        let vfs = self.vfs.clone()?;
+        let modified = vfs.modified(path);
         if let Some(e) = self.files.get(path) {
             if e.modified == modified {
                 return e.map.clone();
@@ -95,7 +106,10 @@ impl InstCache {
             return self.files.get(path).and_then(|e| e.map.clone());
         }
         self.budget -= 1;
-        let map = Map::load(path).ok().map(Rc::new);
+        let map = vfs
+            .read(path)
+            .and_then(|b| Map::parse(&String::from_utf8_lossy(&b)).ok())
+            .map(Rc::new);
         self.files.insert(path.to_path_buf(), CacheEntry { modified, map: map.clone() });
         map
     }
@@ -114,7 +128,7 @@ fn maps_root(dir: &Path) -> Option<PathBuf> {
 }
 
 /// Resolve the `file` key of a `func_instance` contained in a VMF located in `base_dir`.
-pub fn resolve(file: &str, base_dir: Option<&Path>, fallback: &[PathBuf]) -> Option<PathBuf> {
+pub fn resolve(vfs: &dyn Vfs, file: &str, base_dir: Option<&Path>, fallback: &[PathBuf]) -> Option<PathBuf> {
     let file = file.trim();
     if file.is_empty() {
         return None;
@@ -135,8 +149,8 @@ pub fn resolve(file: &str, base_dir: Option<&Path>, fallback: &[PathBuf]) -> Opt
             continue;
         }
         let p = d.join(&rel);
-        if p.is_file() {
-            return Some(std::fs::canonicalize(&p).unwrap_or(p));
+        if vfs.is_file(&p) {
+            return Some(vfs.canonical(&p));
         }
         seen.push(d);
     }
@@ -178,7 +192,8 @@ impl Collector<'_> {
         if self.stack.len() >= MAX_DEPTH {
             return;
         }
-        let Some(path) = resolve(file, base_dir, self.fallback) else { return };
+        let Some(vfs) = self.cache.vfs() else { return };
+        let Some(path) = resolve(&*vfs, file, base_dir, self.fallback) else { return };
         if self.stack.contains(&path) {
             return;
         }
@@ -277,13 +292,13 @@ mod tests {
 
         // maps root wins over the configured fallback, extension is optional, slashes are normalised
         let want = canon(maps.join("instances/lift.vmf"));
-        assert_eq!(resolve("instances/lift.vmf", Some(&sub), &fallback), Some(want.clone()));
-        assert_eq!(resolve("instances\\lift", Some(&sub), &fallback), Some(want));
+        assert_eq!(resolve(&crate::platform::LocalFs, "instances/lift.vmf", Some(&sub), &fallback), Some(want.clone()));
+        assert_eq!(resolve(&crate::platform::LocalFs, "instances\\lift", Some(&sub), &fallback), Some(want));
         // unsaved map: only the fallback is searched
-        assert_eq!(resolve("instances/lift.vmf", None, &fallback), Some(canon(other.join("instances/lift.vmf"))));
+        assert_eq!(resolve(&crate::platform::LocalFs, "instances/lift.vmf", None, &fallback), Some(canon(other.join("instances/lift.vmf"))));
         // directories and empty keys never resolve
-        assert_eq!(resolve("instances/dir.vmf", Some(&sub), &[]), None);
-        assert_eq!(resolve("  ", Some(&sub), &fallback), None);
+        assert_eq!(resolve(&crate::platform::LocalFs, "instances/dir.vmf", Some(&sub), &[]), None);
+        assert_eq!(resolve(&crate::platform::LocalFs, "  ", Some(&sub), &fallback), None);
 
         std::fs::remove_dir_all(&root).ok();
     }

@@ -60,6 +60,8 @@ pub struct ModelViewer {
     pub show_attach: bool,
     pub show_hull: bool,
     pub load_failed: bool,
+    /// The model's files were still arriving (browser): load again next frame.
+    pub retry: bool,
     /// Set when opened from an entity's model key: the window becomes a picker.
     pub pick: Option<PickTarget>,
     /// Expand the tree down to the current model on the next frame.
@@ -89,6 +91,7 @@ impl Default for ModelViewer {
             show_attach: false,
             show_hull: false,
             load_failed: false,
+            retry: false,
             pick: None,
             reveal: false,
             mesh_key: Default::default(),
@@ -159,6 +162,10 @@ impl App {
             return;
         }
         let mut mv = std::mem::take(&mut self.mv);
+        if mv.retry {
+            let path = mv.path.clone();
+            self.mv_load(&mut mv, path);
+        }
         if mv.list.is_empty() {
             mv.list = self.mats.fs.list("models/", "mdl");
             mv.tree = None;
@@ -243,8 +250,13 @@ impl App {
     }
 
     pub fn mv_load(&mut self, mv: &mut ModelViewer, path: String) {
+        let mark = self.mats.fs.mark();
         let m = mdl::load(&self.mats.fs, &path).map(Rc::new);
-        mv.load_failed = m.is_none();
+        mv.retry = m.is_none() && self.mats.fs.stalled_since(mark);
+        if mv.retry {
+            self.ctx.request_repaint();
+        }
+        mv.load_failed = m.is_none() && !mv.retry;
         mv.model = m;
         mv.path = path;
         mv.skin = 0;
@@ -296,7 +308,7 @@ impl App {
 
     fn mv_view(&mut self, ui: &mut egui::Ui, mv: &mut ModelViewer) {
         let Some(model) = mv.model.clone() else {
-            ui.label(if mv.load_failed { "Failed to load model." } else { "Pick a model from the list." });
+            ui.label(if mv.load_failed { "Failed to load model." } else if mv.retry { "Loading..." } else { "Pick a model from the list." });
             return;
         };
         ui.label(RichText::new(&mv.path).strong());

@@ -160,6 +160,16 @@ pub fn read_hull(mdl: &[u8]) -> Option<(DVec3, DVec3)> {
 }
 
 pub fn load(fs: &GameFs, path: &str) -> Option<Model> {
+    let mark = fs.mark();
+    let model = load_inner(fs, path);
+    // with asynchronous files some parts may still be missing: report "not yet", not a partial model
+    if fs.stalled_since(mark) {
+        return None;
+    }
+    model
+}
+
+fn load_inner(fs: &GameFs, path: &str) -> Option<Model> {
     let path = path.replace('\\', "/").to_ascii_lowercase();
     let mdl = fs.read(&path)?;
     let (hull_min, hull_max) = read_hull(&mdl)?;

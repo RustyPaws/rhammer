@@ -1,8 +1,7 @@
 //! Valve VPK (v1/v2) directory reader.
 
 use std::collections::HashMap;
-use std::fs::File;
-use std::io::{Read, Seek, SeekFrom};
+use crate::platform::SharedVfs;
 use std::path::{Path, PathBuf};
 
 #[derive(Clone, Debug)]
@@ -14,6 +13,7 @@ pub struct Entry {
 }
 
 pub struct Vpk {
+    vfs: SharedVfs,
     base: PathBuf, // path prefix without "_dir.vpk"
     dir_path: PathBuf,
     data_start: u64,
@@ -34,24 +34,16 @@ fn cstr(b: &[u8], i: &mut usize) -> Option<String> {
 }
 
 impl Vpk {
-    pub fn open(dir_path: &Path) -> Option<Vpk> {
-        let mut f = File::open(dir_path).ok()?;
-        let mut hdr = [0u8; 28];
-        f.read_exact(&mut hdr[..12]).ok()?;
+    pub fn open(vfs: &SharedVfs, dir_path: &Path) -> Option<Vpk> {
+        let hdr = vfs.read_range(dir_path, 0, 12)?;
         let sig = u32::from_le_bytes(hdr[0..4].try_into().ok()?);
         if sig != 0x55AA1234 {
             return None;
         }
         let version = u32::from_le_bytes(hdr[4..8].try_into().ok()?);
         let tree_size = u32::from_le_bytes(hdr[8..12].try_into().ok()?) as usize;
-        let header_size = if version >= 2 {
-            f.read_exact(&mut hdr[12..28]).ok()?;
-            28
-        } else {
-            12
-        };
-        let mut tree = vec![0u8; tree_size];
-        f.read_exact(&mut tree).ok()?;
+        let header_size = if version >= 2 { 28 } else { 12 };
+        let tree = vfs.read_range(dir_path, header_size as u64, tree_size)?;
         let mut files = HashMap::new();
         let mut i = 0;
         loop {
@@ -91,6 +83,7 @@ impl Vpk {
         let s = dir_path.to_string_lossy();
         let base = PathBuf::from(s.trim_end_matches("_dir.vpk").to_string());
         Some(Vpk {
+            vfs: vfs.clone(),
             base,
             dir_path: dir_path.to_path_buf(),
             data_start: (header_size + tree_size) as u64,
@@ -111,11 +104,7 @@ impl Vpk {
             } else {
                 (PathBuf::from(format!("{}_{:03}.vpk", self.base.display(), e.archive)), e.offset as u64)
             };
-            let mut f = File::open(path).ok()?;
-            f.seek(SeekFrom::Start(off)).ok()?;
-            let mut buf = vec![0u8; e.length as usize];
-            f.read_exact(&mut buf).ok()?;
-            out.extend(buf);
+            out.extend(self.vfs.read_range(&path, off, e.length as usize)?);
         }
         Some(out)
     }

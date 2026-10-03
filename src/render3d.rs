@@ -89,7 +89,17 @@ pub struct Shared {
 
 pub type SharedRef = Arc<Mutex<Shared>>;
 
-const VS: &str = r#"#version 330 core
+/// Shader preamble: desktop GL 3.3 core, or WebGL2 (GLSL ES 3.00, which needs default precisions).
+#[cfg(feature = "local")]
+const VS_HEAD: &str = "#version 330 core";
+#[cfg(feature = "local")]
+const FS_HEAD: &str = "#version 330 core";
+#[cfg(feature = "web")]
+const VS_HEAD: &str = "#version 300 es\nprecision highp float;\nprecision highp int;";
+#[cfg(feature = "web")]
+const FS_HEAD: &str = "#version 300 es\nprecision highp float;\nprecision highp int;";
+
+const VS: &str = r#"
 layout(location=0) in vec3 pos;
 layout(location=1) in vec3 nrm;
 layout(location=2) in vec2 uv;
@@ -99,7 +109,7 @@ out vec3 vn; out vec2 vuv; out vec4 vcol;
 void main(){ gl_Position = mvp*vec4(pos,1.0); vn=nrm; vuv=uv; vcol=col; }
 "#;
 
-const FS: &str = r#"#version 330 core
+const FS: &str = r#"
 in vec3 vn; in vec2 vuv; in vec4 vcol;
 uniform sampler2D tex; uniform int use_tex; uniform int light; uniform int amode;
 out vec4 o;
@@ -128,9 +138,10 @@ impl Gpu {
     fn new(gl: &glow::Context) -> Option<Gpu> {
         unsafe {
             let prog = gl.create_program().ok()?;
-            for (ty, src) in [(glow::VERTEX_SHADER, VS), (glow::FRAGMENT_SHADER, FS)] {
+            for (ty, head, body) in [(glow::VERTEX_SHADER, VS_HEAD, VS), (glow::FRAGMENT_SHADER, FS_HEAD, FS)] {
+                let src = format!("{head}{body}");
                 let sh = gl.create_shader(ty).ok()?;
-                gl.shader_source(sh, src);
+                gl.shader_source(sh, &src);
                 gl.compile_shader(sh);
                 if !gl.get_shader_compile_status(sh) {
                     eprintln!("shader error: {}", gl.get_shader_info_log(sh));
@@ -272,6 +283,8 @@ impl Gpu {
             gl.uniform_1_i32(self.u_light.as_ref(), scene.lighting as i32);
             gl.enable(glow::POLYGON_OFFSET_FILL);
             gl.polygon_offset(1.0, 1.0);
+            // WebGL has no polygon mode, so wireframe shading is desktop-only
+            #[cfg(feature = "local")]
             if scene.wireframe {
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::LINE);
             }
@@ -306,6 +319,7 @@ impl Gpu {
             gl.depth_mask(true);
             gl.disable(glow::BLEND);
             gl.uniform_1_i32(self.u_amode.as_ref(), 0);
+            #[cfg(feature = "local")]
             if scene.wireframe {
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
             }

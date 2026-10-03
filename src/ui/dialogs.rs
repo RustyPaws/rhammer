@@ -1,10 +1,13 @@
 //! Modal-ish windows: game configurations, run map, compile log, transform, find, etc.
 
 use crate::app::*;
+#[cfg(feature = "local")]
 use crate::compile::Level;
 use crate::config::GameConfig;
 use crate::editor::doc::{Sel, Xform};
-use eframe::egui::{self, Color32, RichText};
+#[cfg(feature = "local")]
+use eframe::egui::Color32;
+use eframe::egui::{self, RichText};
 use glam::{DQuat, DVec3};
 
 const PATH_W: f32 = 380.0;
@@ -14,14 +17,18 @@ enum CfgTab {
     #[default]
     General,
     Fgd,
+    #[cfg(feature = "local")]
     Compilers,
     Defaults,
 }
 
 fn path_row(ui: &mut egui::Ui, label: &str, val: &mut String, dir: bool, ext: &[&str]) {
+    #[cfg(feature = "web")]
+    let _ = (dir, ext);
     ui.add(egui::Label::new(label).wrap_mode(egui::TextWrapMode::Extend));
     ui.horizontal(|ui| {
         ui.add(egui::TextEdit::singleline(val).desired_width(PATH_W));
+        #[cfg(feature = "local")]
         if ui.button("…").clicked() {
             let mut d = rfd::FileDialog::new();
             if !val.is_empty() {
@@ -48,8 +55,11 @@ impl App {
     pub fn dialogs(&mut self, ctx: &egui::Context) {
         self.dlg_pending(ctx);
         self.dlg_game_cfg(ctx);
-        self.dlg_run_map(ctx);
-        self.dlg_compile_log(ctx);
+        #[cfg(feature = "local")]
+        {
+            self.dlg_run_map(ctx);
+            self.dlg_compile_log(ctx);
+        }
         self.dlg_tex(ctx);
         self.dlg_model_viewer(ctx);
         self.dlg_transform(ctx);
@@ -120,6 +130,15 @@ impl App {
                         self.settings.games.push(GameConfig::default());
                         self.cfg_sel = self.settings.games.len() - 1;
                     }
+                    #[cfg(feature = "web")]
+                    if ui
+                        .add_enabled(crate::platform::web_supported(), egui::Button::new("Add game folder…"))
+                        .on_hover_text("Pick a copy of a game folder (e.g. Portal 2) outside system folders; its game configuration is detected")
+                        .on_disabled_hover_text("Needs a Chromium browser (Chrome, Edge)")
+                        .clicked()
+                    {
+                        self.begin_pick();
+                    }
                     if ui.add_enabled(self.settings.games.len() > 1, egui::Button::new("Remove")).clicked() {
                         self.settings.games.remove(self.cfg_sel);
                         self.cfg_sel = self.cfg_sel.saturating_sub(1);
@@ -131,9 +150,10 @@ impl App {
                     }
                 });
                 ui.separator();
+                #[cfg(feature = "local")]
                 if ui.button("Import Hammer GameConfig.txt…").clicked() {
                     if let Some(p) = rfd::FileDialog::new().add_filter("GameConfig", &["txt"]).pick_file() {
-                        match crate::config::import_hammer(&p) {
+                        match crate::config::import_hammer(&*self.vfs, &p) {
                             Ok(list) => {
                                 let n = list.len();
                                 self.settings.games.extend(list);
@@ -150,7 +170,11 @@ impl App {
                 let tab_id = egui::Id::new("gcfg_tab");
                 let mut tab: CfgTab = ui.data_mut(|d| d.get_temp(tab_id).unwrap_or_default());
                 ui.horizontal(|ui| {
-                    for (t, label) in [(CfgTab::General, "General"), (CfgTab::Fgd, "Game data (FGD)"), (CfgTab::Compilers, "Compilers"), (CfgTab::Defaults, "Defaults")] {
+                    let mut tabs = vec![(CfgTab::General, "General"), (CfgTab::Fgd, "Game data (FGD)")];
+                    #[cfg(feature = "local")]
+                    tabs.push((CfgTab::Compilers, "Compilers"));
+                    tabs.push((CfgTab::Defaults, "Defaults"));
+                    for (t, label) in tabs {
                         ui.selectable_value(&mut tab, t, label);
                     }
                 });
@@ -163,9 +187,13 @@ impl App {
                             ui.add(egui::TextEdit::singleline(&mut g.name).desired_width(PATH_W));
                             ui.end_row();
                             path_row(ui, "Game directory", &mut g.game_dir, true, &[]);
-                            path_row(ui, "Game executable", &mut g.game_exe, false, &["exe"]);
-                            path_row(ui, "Game exe directory", &mut g.game_exe_dir, true, &[]);
+                            #[cfg(feature = "local")]
+                            {
+                                path_row(ui, "Game executable", &mut g.game_exe, false, &["exe"]);
+                                path_row(ui, "Game exe directory", &mut g.game_exe_dir, true, &[]);
+                            }
                             path_row(ui, "Map directory (VMF)", &mut g.map_dir, true, &[]);
+                            #[cfg(feature = "local")]
                             path_row(ui, "BSP directory (game maps)", &mut g.bsp_dir, true, &[]);
                             path_row(ui, "Prefab directory", &mut g.prefab_dir, true, &[]);
                         });
@@ -175,6 +203,7 @@ impl App {
                         for (i, f) in g.fgds.iter_mut().enumerate() {
                             ui.horizontal(|ui| {
                                 ui.add(egui::TextEdit::singleline(f).desired_width(PATH_W + 60.0));
+                                #[cfg(feature = "local")]
                                 if ui.button("…").clicked() {
                                     if let Some(p) = rfd::FileDialog::new().add_filter("FGD", &["fgd"]).pick_file() {
                                         *f = p.display().to_string();
@@ -191,12 +220,14 @@ impl App {
                         if g.fgds.is_empty() {
                             ui.weak("No FGD files.");
                         }
+                        #[cfg(feature = "local")]
                         if ui.button("Add FGD…").clicked() {
                             if let Some(p) = rfd::FileDialog::new().add_filter("FGD", &["fgd"]).pick_file() {
                                 g.fgds.push(p.display().to_string());
                             }
                         }
                     }
+                    #[cfg(feature = "local")]
                     CfgTab::Compilers => {
                         egui::Grid::new("gcfg2").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
                             path_row(ui, "BSP (vbsp.exe)", &mut g.bsp_exe, false, &["exe"]);
@@ -236,6 +267,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "local")]
     fn dlg_run_map(&mut self, ctx: &egui::Context) {
         if !self.win.run_map {
             return;
@@ -291,6 +323,7 @@ impl App {
         }
     }
 
+    #[cfg(feature = "local")]
     fn dlg_compile_log(&mut self, ctx: &egui::Context) {
         if !self.win.compile_log {
             return;

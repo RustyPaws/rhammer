@@ -1,6 +1,7 @@
 //! Application state, window chrome, menus, file operations and hotkeys.
 
 use crate::assets::Materials;
+#[cfg(feature = "local")]
 use crate::compile::CompileJob;
 use crate::config::{GameConfig, Settings};
 use crate::editor::doc::{Clipboard, Doc, Sel, Xform};
@@ -8,7 +9,11 @@ use crate::formats::fgd::Fgd;
 use crate::editor::geom::{self, Plane, Primitive};
 use crate::render3d::{Camera, SharedRef};
 use crate::formats::vmf::Map;
-use eframe::egui::{self, Align2, Color32, Key, RichText};
+#[cfg(feature = "local")]
+use eframe::egui::Color32;
+#[cfg(feature = "web")]
+use crate::platform::WebEvent;
+use eframe::egui::{self, Align2, Key, RichText};
 use glam::{DQuat, DVec3};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -61,7 +66,9 @@ pub struct ClipState {
 pub struct Windows {
     pub game_cfg: bool,
     pub model_viewer: bool,
+    #[cfg(feature = "local")]
     pub run_map: bool,
+    #[cfg(feature = "local")]
     pub compile_log: bool,
     pub tex_browser: bool,
     pub transform: bool,
@@ -90,6 +97,24 @@ pub struct App {
     pub settings: Settings,
     pub doc: Doc,
     pub fgd: Fgd,
+    pub vfs: crate::platform::SharedVfs,
+    /// Browser file access (the same object as `vfs`, with the folder picker).
+    #[cfg(feature = "web")]
+    pub web: crate::platform::WebFs,
+    /// Game data is still being fetched in the browser.
+    #[cfg(feature = "web")]
+    pub loading: bool,
+    /// Remembered game folders that need a click to be re-opened.
+    #[cfg(feature = "web")]
+    pub locked_roots: Vec<String>,
+    /// The "browser not supported" notice was dismissed.
+    #[cfg(feature = "web")]
+    pub unsupported_ack: bool,
+    /// Showing the "copy the game out of system folders" notice before the folder picker.
+    #[cfg(feature = "web")]
+    pub pick_info: bool,
+    #[cfg(feature = "web")]
+    pub pick_info_skip: bool,
     pub mats: Materials,
     pub sel: Sel,
     pub sel_stamp: u64,
@@ -118,6 +143,7 @@ pub struct App {
     pub maximized: Option<usize>,
     pub tab: RightTab,
     pub win: Windows,
+    #[cfg(feature = "local")]
     pub compile: Option<CompileJob>,
     pub tex_filter: String,
     pub cfg_sel: usize,
@@ -127,7 +153,7 @@ pub struct App {
     pub io_graph: crate::ui::io_graph::IoGraph,
     pub transform_dlg: TransformDlg,
     pub hollow_thickness: f64,
-    pub last_prop_edit: Option<(String, std::time::Instant)>,
+    pub last_prop_edit: Option<(String, web_time::Instant)>,
     pub tex_scale: f64,
     pub face_edit: FaceEdit,
     pub ctx: egui::Context,
@@ -184,13 +210,34 @@ pub const VIEW_NAMES: [&str; 4] = ["3D Perspective", "Top (X/Y)", "Front (X/Z)",
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> App {
         let mut settings = Settings::load();
-        let (fgd, mats) = load_game_data(settings.active_game());
+        #[cfg(feature = "local")]
+        let vfs = crate::platform::default_vfs();
+        #[cfg(feature = "web")]
+        let web = crate::platform::WebFs::new();
+        #[cfg(feature = "web")]
+        let vfs: crate::platform::SharedVfs = std::rc::Rc::new(web.clone());
+        #[cfg(feature = "web")]
+        web.set_ctx(cc.egui_ctx.clone());
+        let (fgd, mats) = load_game_data(&vfs, settings.active_game());
         let shared: SharedRef = Default::default();
         let _ = &mut settings;
         let mut app = App {
             settings,
             doc: Doc::new(Map::new_empty(), None),
             fgd,
+            vfs: vfs.clone(),
+            #[cfg(feature = "web")]
+            web,
+            #[cfg(feature = "web")]
+            loading: false,
+            #[cfg(feature = "web")]
+            locked_roots: vec![],
+            #[cfg(feature = "web")]
+            unsupported_ack: false,
+            #[cfg(feature = "web")]
+            pick_info: false,
+            #[cfg(feature = "web")]
+            pick_info_skip: false,
             mats,
             sel: Sel::new(),
             sel_stamp: 0,
@@ -219,6 +266,7 @@ impl App {
             maximized: None,
             tab: RightTab::Object,
             win: Windows::default(),
+            #[cfg(feature = "local")]
             compile: None,
             tex_filter: String::new(),
             cfg_sel: 0,
@@ -237,7 +285,7 @@ impl App {
             paste_count: 0,
             show_entity_names: true,
             inst: Default::default(),
-            inst_cache: Default::default(),
+            inst_cache: crate::editor::instances::InstCache::new(vfs.clone()),
             inst_key: u64::MAX,
             models: Default::default(),
             model_budget: 0,
@@ -257,12 +305,22 @@ impl App {
                 app.ent_class = g.default_point_entity.clone();
             }
         }
+        #[cfg(feature = "web")]
+        {
+            app.web.start_restore();
+            if app.settings.games.is_empty() {
+                app.status = "Use File > Open game folder... to load a game".into();
+            }
+        }
         // open a map given on the command line, or the last one
-        let arg = std::env::args().nth(1).map(PathBuf::from);
-        let last = (!app.settings.last_map.is_empty()).then(|| PathBuf::from(&app.settings.last_map));
-        if let Some(p) = arg.or(last) {
-            if p.exists() {
-                app.open_path(&p);
+        #[cfg(feature = "local")]
+        {
+            let arg = std::env::args().nth(1).map(PathBuf::from);
+            let last = (!app.settings.last_map.is_empty()).then(|| PathBuf::from(&app.settings.last_map));
+            if let Some(p) = arg.or(last) {
+                if p.exists() {
+                    app.open_path(&p);
+                }
             }
         }
         app
@@ -273,7 +331,7 @@ impl App {
     }
 
     pub fn reload_game_data(&mut self) {
-        let (fgd, mats) = load_game_data(self.settings.active_game());
+        let (fgd, mats) = load_game_data(&self.vfs, self.settings.active_game());
         self.fgd = fgd;
         self.mats = mats;
         self.thumb_tex.clear();
@@ -285,6 +343,132 @@ impl App {
         self.world_key = (u64::MAX, 0);
         if let Some(g) = self.settings.active_game() {
             self.tex_scale = g.default_texture_scale;
+        }
+        // in the browser the files arrive asynchronously: repeat until a pass fetches nothing new
+        #[cfg(feature = "web")]
+        {
+            self.loading = self.vfs.pending() > 0;
+        }
+    }
+
+    /// Browser only: starts picking a game folder, after a notice about system folders (unless
+    /// the user asked not to see it again). Call from a click handler.
+    #[cfg(feature = "web")]
+    pub fn begin_pick(&mut self) {
+        if crate::platform::storage_get("rhammer_skip_pick_info").as_deref() == Some("1") {
+            self.web.start_pick();
+        } else {
+            self.pick_info = true;
+        }
+    }
+
+    /// Browser only: finishes a folder pick and keeps loading game data until it is complete.
+    #[cfg(feature = "web")]
+    fn web_poll(&mut self, ctx: &egui::Context) {
+        for ev in self.web.take_events() {
+            match ev {
+                WebEvent::Picked(Ok((root, list))) => {
+                    let mut first = None;
+                    for g in list {
+                        let at = match self.settings.games.iter().position(|x| x.name == g.name && x.game_dir == g.game_dir) {
+                            Some(i) => {
+                                self.settings.games[i] = g;
+                                i
+                            }
+                            None => {
+                                self.settings.games.push(g);
+                                self.settings.games.len() - 1
+                            }
+                        };
+                        first.get_or_insert(at);
+                    }
+                    self.settings.active = first.unwrap_or(0);
+                    self.cfg_sel = self.settings.active;
+                    self.settings.save();
+                    self.status = format!("Opened game folder '{root}'");
+                    self.reload_game_data();
+                }
+                WebEvent::Picked(Err(e)) => self.status = e,
+                WebEvent::Restored { locked } => {
+                    self.locked_roots = locked;
+                    if self.settings.active_game().is_some() {
+                        self.reload_game_data();
+                    }
+                }
+                WebEvent::Opened(Ok((path, bytes))) => self.open_map_bytes(&bytes, Path::new(&path)),
+                WebEvent::Opened(Err(e)) => self.status = if e == "Cancelled" { e } else { format!("Open failed: {e}") },
+                WebEvent::Saved { path, result: Ok(()) } => {
+                    if !path.is_empty() {
+                        self.doc.path = Some(PathBuf::from(&path));
+                        self.settings.last_map = path.clone();
+                        self.settings.save();
+                    }
+                    self.doc.dirty = false;
+                    self.status = format!("Saved {path}");
+                }
+                WebEvent::Saved { result: Err(e), .. } => self.status = if e == "Cancelled" { "Save cancelled".into() } else { format!("Save failed: {e}") },
+            }
+        }
+        if self.pick_info {
+            let mut close = false;
+            egui::Window::new("Choose your game folder").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+                ui.set_max_width(440.0);
+                ui.label("Pick the folder of the game itself, for example 'Portal 2' (the one that contains 'bin' and 'portal2').");
+                ui.add_space(4.0);
+                ui.colored_label(egui::Color32::from_rgb(255, 190, 90), "Browsers refuse system folders.");
+                ui.label(
+                    r"Steam usually lives in C:\Program Files (x86)\Steam, which the browser will not let a website open. Copy the game folder (steamapps/common/Portal 2) to your own folder first, for example Documents or Desktop, and pick the copy. The copy is only read and written by this editor; maps you save go into it.",
+                );
+                ui.add_space(4.0);
+                ui.checkbox(&mut self.pick_info_skip, "Do not show this again");
+                ui.horizontal(|ui| {
+                    if ui.button("Choose folder...").clicked() {
+                        if self.pick_info_skip {
+                            crate::platform::storage_set("rhammer_skip_pick_info", "1");
+                        }
+                        self.web.start_pick();
+                        close = true;
+                    }
+                    if ui.button("Cancel").clicked() {
+                        close = true;
+                    }
+                });
+            });
+            if close {
+                self.pick_info = false;
+            }
+        }
+        if !self.unsupported_ack && !crate::platform::web_supported() {
+            egui::Window::new("Browser not supported").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+                ui.set_max_width(420.0);
+                ui.colored_label(egui::Color32::from_rgb(255, 190, 90), "This browser does not support the File System Access API.");
+                ui.label(
+                    "rhammer needs it to read your game folder (textures, models, entity definitions) and to open and save .vmf files. Use a Chromium-based browser such as Google Chrome, Microsoft Edge or Opera on a desktop computer. Firefox and Safari do not provide this API.",
+                );
+                ui.label("You can continue, but game files cannot be loaded and maps cannot be opened or saved.");
+                if ui.button("Continue anyway").clicked() {
+                    self.unsupported_ack = true;
+                }
+            });
+        }
+        if !self.locked_roots.is_empty() {
+            egui::Window::new("Game folders").collapsible(false).resizable(false).anchor(Align2::CENTER_TOP, [0.0, 40.0]).show(ctx, |ui| {
+                ui.label(format!("The browser needs your permission to use: {}", self.locked_roots.join(", ")));
+                if ui.button("Reconnect").clicked() {
+                    self.web.reconnect();
+                }
+            });
+        }
+        if self.loading && self.vfs.pending() == 0 {
+            self.reload_game_data();
+        }
+        if self.loading {
+            egui::Window::new("Loading game data").collapsible(false).resizable(false).anchor(Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spinner();
+                    ui.label(format!("Reading game files ({} requests in flight)", self.vfs.pending()));
+                });
+            });
         }
     }
 
@@ -332,25 +516,52 @@ impl App {
         self.status = "New map".into();
     }
 
+    #[cfg(feature = "local")]
     pub fn open_path(&mut self, p: &Path) {
         match Map::load(p) {
-            Ok(m) => {
-                self.doc = Doc::new(m, Some(p.to_path_buf()));
-                self.anim_preview.clear();
-                self.reset_derived();
-                self.set_sel(Sel::new());
-                self.faces.clear();
-                self.block = None;
-                self.grid = self.doc.map.grid_spacing().max(1.0);
-                self.settings.last_map = p.display().to_string();
-                self.settings.save();
-                self.frame_all();
-                self.status = format!("Opened {}", p.display());
-            }
+            Ok(m) => self.open_map(m, p),
             Err(e) => self.status = format!("Open failed: {e:#}"),
         }
     }
 
+    /// Opens a map that is already in the game files (browser build).
+    #[cfg(feature = "web")]
+    pub fn open_path(&mut self, p: &Path) {
+        match self.vfs.read(p) {
+            Some(b) => self.open_map_bytes(&b, p),
+            None => self.status = format!("Open failed: {} is not available", p.display()),
+        }
+    }
+
+    #[cfg(feature = "web")]
+    fn open_map_bytes(&mut self, bytes: &[u8], p: &Path) {
+        match Map::parse(&String::from_utf8_lossy(bytes)) {
+            Ok(m) => self.open_map(m, p),
+            Err(e) => self.status = format!("Open failed: {e:#}"),
+        }
+    }
+
+    fn open_map(&mut self, m: Map, p: &Path) {
+        self.doc = Doc::new(m, Some(p.to_path_buf()));
+        self.anim_preview.clear();
+        self.reset_derived();
+        self.set_sel(Sel::new());
+        self.faces.clear();
+        self.block = None;
+        self.grid = self.doc.map.grid_spacing().max(1.0);
+        self.settings.last_map = p.display().to_string();
+        self.settings.save();
+        self.frame_all();
+        self.status = format!("Opened {}", p.display());
+    }
+
+    #[cfg(feature = "web")]
+    pub fn open_dialog(&mut self) {
+        let start = self.game().map(|g| g.map_dir.clone()).unwrap_or_default();
+        self.web.start_open(&start);
+    }
+
+    #[cfg(feature = "local")]
     pub fn open_dialog(&mut self) {
         let mut d = rfd::FileDialog::new().add_filter("Valve Map", &["vmf"]).add_filter("All files", &["*"]);
         if let Some(g) = self.game() {
@@ -370,6 +581,19 @@ impl App {
         }
     }
 
+    #[cfg(feature = "web")]
+    pub fn save_as(&mut self) -> bool {
+        self.prepare_save();
+        let text = self.doc.map.to_text();
+        let suggested = self.doc.path.as_ref().and_then(|p| p.file_name()).map(|n| n.to_string_lossy().into_owned()).unwrap_or_else(|| "untitled.vmf".into());
+        let start = self.game().map(|g| g.map_dir.clone()).unwrap_or_default();
+        self.web.start_save_as(&start, &suggested, text.into_bytes());
+        self.status = "Choose where to save...".into();
+        // the file is written once the browser dialog closes, so this cannot report success yet
+        false
+    }
+
+    #[cfg(feature = "local")]
     pub fn save_as(&mut self) -> bool {
         let mut d = rfd::FileDialog::new().add_filter("Valve Map", &["vmf"]);
         if let Some(g) = self.game() {
@@ -387,20 +611,19 @@ impl App {
         }
     }
 
+    /// Browser: the write finishes asynchronously; the document is marked clean when it does.
+    #[cfg(feature = "web")]
     fn save_to(&mut self, p: &Path) -> bool {
-        // keep the VMF header in sync with the editor state
-        self.doc.map.set_viewsetting("nGridSpacing", &format!("{}", self.grid as i64));
-        self.doc.map.set_viewsetting("bSnapToGrid", if self.snap { "1" } else { "0" });
-        self.doc.map.set_viewsetting("bShowGrid", if self.show_grid { "1" } else { "0" });
-        if let Some(vi) = self.doc.map.header.iter_mut().find(|n| n.key.eq_ignore_ascii_case("versioninfo")) {
-            if let crate::kv::Value::Block(c) = &mut vi.value {
-                if let Some(mv) = c.iter_mut().find(|n| n.key == "mapversion") {
-                    let v: i64 = mv.as_str().and_then(|s| s.parse().ok()).unwrap_or(0) + 1;
-                    mv.value = crate::kv::Value::Str(v.to_string());
-                    self.doc.map.world.set("mapversion", v.to_string());
-                }
-            }
-        }
+        self.prepare_save();
+        let text = self.doc.map.to_text();
+        self.web.start_write(&p.to_string_lossy(), text.into_bytes());
+        self.status = format!("Saving {}...", p.display());
+        true
+    }
+
+    #[cfg(feature = "local")]
+    fn save_to(&mut self, p: &Path) -> bool {
+        self.prepare_save();
         match self.doc.map.save(p) {
             Ok(_) => {
                 self.doc.path = Some(p.to_path_buf());
@@ -413,6 +636,22 @@ impl App {
             Err(e) => {
                 self.status = format!("Save failed: {e:#}");
                 false
+            }
+        }
+    }
+
+    fn prepare_save(&mut self) {
+        // keep the VMF header in sync with the editor state
+        self.doc.map.set_viewsetting("nGridSpacing", &format!("{}", self.grid as i64));
+        self.doc.map.set_viewsetting("bSnapToGrid", if self.snap { "1" } else { "0" });
+        self.doc.map.set_viewsetting("bShowGrid", if self.show_grid { "1" } else { "0" });
+        if let Some(vi) = self.doc.map.header.iter_mut().find(|n| n.key.eq_ignore_ascii_case("versioninfo")) {
+            if let crate::kv::Value::Block(c) = &mut vi.value {
+                if let Some(mv) = c.iter_mut().find(|n| n.key == "mapversion") {
+                    let v: i64 = mv.as_str().and_then(|s| s.parse().ok()).unwrap_or(0) + 1;
+                    mv.value = crate::kv::Value::Str(v.to_string());
+                    self.doc.map.world.set("mapversion", v.to_string());
+                }
             }
         }
     }
@@ -635,6 +874,7 @@ impl App {
         }
     }
 
+#[cfg(feature = "local")]
     pub fn run_map(&mut self) {
         // save first (a compile needs the file on disk)
         if self.doc.path.is_none() && !self.save_as() {
@@ -748,6 +988,7 @@ impl App {
                     _ => {}
                 }
             }
+            #[cfg(feature = "local")]
             if pressed(Key::F9) {
                 self.win.run_map = true;
             }
@@ -761,6 +1002,7 @@ impl App {
                 self.grid = (self.grid * 2.0).min(1024.0);
             }
         }
+        #[cfg(feature = "local")]
         if pressed(Key::F9) && shift {
             self.win.run_map = true;
         }
@@ -786,6 +1028,16 @@ impl App {
                     self.request(PendingAction::Open(None));
                     ui.close();
                 }
+                #[cfg(feature = "web")]
+                {
+                    ui.separator();
+                    let ok = crate::platform::web_supported();
+                    if ui.add_enabled(ok, egui::Button::new("Open game folder...")).on_disabled_hover_text("Needs a Chromium browser (Chrome, Edge)").clicked() {
+                        self.begin_pick();
+                        ui.close();
+                    }
+                    ui.separator();
+                }
                 if ui.button("Save         Ctrl+S").clicked() {
                     self.save();
                     ui.close();
@@ -794,10 +1046,13 @@ impl App {
                     self.save_as();
                     ui.close();
                 }
-                ui.separator();
-                if ui.button("Run Map...     F9").clicked() {
-                    self.win.run_map = true;
-                    ui.close();
+                #[cfg(feature = "local")]
+                {
+                    ui.separator();
+                    if ui.button("Run Map...     F9").clicked() {
+                        self.win.run_map = true;
+                        ui.close();
+                    }
                 }
                 ui.separator();
                 if ui.button("Exit").clicked() {
@@ -921,13 +1176,16 @@ impl App {
                 }
             });
             ui.menu_button("Map", |ui| {
-                if ui.button("Run map...  F9").clicked() {
-                    self.win.run_map = true;
-                    ui.close();
-                }
-                if ui.button("Compile log").clicked() {
-                    self.win.compile_log = true;
-                    ui.close();
+                #[cfg(feature = "local")]
+                {
+                    if ui.button("Run map...  F9").clicked() {
+                        self.win.run_map = true;
+                        ui.close();
+                    }
+                    if ui.button("Compile log").clicked() {
+                        self.win.compile_log = true;
+                        ui.close();
+                    }
                 }
                 if ui.button("Texture browser...").clicked() {
                     self.win.tex_browser = true;
@@ -1065,6 +1323,7 @@ impl App {
             }
             ui.separator();
             ui.label(format!("{} brushes, {} entities", self.doc.map.world.solids.len(), self.doc.map.entities.len()));
+            #[cfg(feature = "local")]
             if let Some(job) = &self.compile {
                 ui.separator();
                 if job.running {
@@ -1080,18 +1339,18 @@ impl App {
     }
 }
 
-fn load_game_data(g: Option<&GameConfig>) -> (Fgd, Materials) {
+fn load_game_data(vfs: &crate::platform::SharedVfs, g: Option<&GameConfig>) -> (Fgd, Materials) {
     let Some(g) = g else {
-        return (Fgd::default(), Materials::new(Path::new("")));
+        return (Fgd::default(), Materials::new(vfs.clone(), Path::new("")));
     };
     let mut fgd = Fgd::default();
     if let Some(first) = g.fgds.first() {
-        fgd = Fgd::load(Path::new(first));
+        fgd = Fgd::load(&**vfs, Path::new(first));
         // additional FGDs are merged by loading them as includes
         if g.fgds.len() > 1 {
             // Simple approach: build a temporary include-all file in memory is not possible, so merge classes.
             for extra in &g.fgds[1..] {
-                let e = Fgd::load(Path::new(extra));
+                let e = Fgd::load(&**vfs, Path::new(extra));
                 for (k, v) in e.classes {
                     fgd.classes.insert(k, v);
                 }
@@ -1104,12 +1363,13 @@ fn load_game_data(g: Option<&GameConfig>) -> (Fgd, Materials) {
             fgd.names.sort_by_key(|s| s.to_ascii_lowercase());
         }
     }
-    let mats = Materials::new(&g.game_path());
+    let mats = Materials::new(vfs.clone(), &g.game_path());
     (fgd, mats)
 }
 
 impl App {
     /// Developer aid: RHAMMER_SHOT=<file.png> saves a screenshot after a few frames and exits.
+    #[cfg(feature = "local")]
     fn debug_screenshot(&mut self, ctx: &egui::Context) {
         let Ok(path) = std::env::var("RHAMMER_SHOT") else { return };
         let frames: u64 = std::env::var("RHAMMER_FRAMES").ok().and_then(|v| v.parse().ok()).unwrap_or(40);
@@ -1174,6 +1434,7 @@ impl App {
 }
 
 /// Minimal uncompressed PNG writer (no extra dependency).
+#[cfg(feature = "local")]
 fn image_save(path: &str, w: u32, h: u32, rgba: &[u8]) -> std::io::Result<()> {
     use std::io::Write;
     fn crc(data: &[u8]) -> u32 {
@@ -1233,7 +1494,10 @@ impl eframe::App for App {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.win.pending_action = Some(PendingAction::Quit);
         }
+        #[cfg(feature = "web")]
+        self.web_poll(&ctx);
         self.handle_keys(&ctx);
+        #[cfg(feature = "local")]
         if let Some(job) = &mut self.compile {
             if job.poll() {
                 ctx.request_repaint();
@@ -1248,6 +1512,7 @@ impl eframe::App for App {
 
         self.dialogs(&ctx);
         let _ = Align2::CENTER_CENTER;
+        #[cfg(feature = "local")]
         self.debug_screenshot(&ctx);
     }
 }

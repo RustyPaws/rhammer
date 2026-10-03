@@ -2,6 +2,7 @@
 //! game mounts, in priority order (first entry wins).
 
 use crate::kv::{self as kv, NodeList, Value};
+use crate::platform::Vfs;
 use std::path::{Path, PathBuf};
 
 /// One `SearchPaths` line before it is resolved against the disk.
@@ -43,7 +44,7 @@ pub fn parse_entries(root: &[kv::Node]) -> Vec<RawEntry> {
 
 /// Resolves entries to mounts. `game_dir` is the folder holding `gameinfo.txt`
 /// (`|gameinfo_path|`); other relative paths are relative to its parent (the engine root).
-pub fn resolve(entries: &[RawEntry], game_dir: &Path) -> Vec<Mount> {
+pub fn resolve(vfs: &dyn Vfs, entries: &[RawEntry], game_dir: &Path) -> Vec<Mount> {
     let root = game_dir.parent().unwrap_or(game_dir);
     let mut out: Vec<Mount> = Vec::new();
     let mut push = |m: Mount| {
@@ -64,21 +65,19 @@ pub fn resolve(entries: &[RawEntry], game_dir: &Path) -> Vec<Mount> {
         if rest.to_ascii_lowercase().ends_with(".vpk") {
             let stem = rest[..rest.len() - 4].trim_end_matches("_dir");
             let dir_vpk = base.join(format!("{stem}_dir.vpk"));
-            if dir_vpk.is_file() {
+            if vfs.is_file(&dir_vpk) {
                 push(Mount::Vpk(dir_vpk));
             }
         } else if rest == "*" || rest.ends_with("/*") {
             let parent = base.join(rest.trim_end_matches('*').trim_end_matches('/'));
-            let mut subs: Vec<PathBuf> = std::fs::read_dir(&parent)
-                .map(|rd| rd.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect())
-                .unwrap_or_default();
+            let mut subs: Vec<PathBuf> = vfs.read_dir(&parent).into_iter().filter(|e| e.is_dir).map(|e| parent.join(e.name)).collect();
             subs.sort();
             for s in subs {
                 push(Mount::Dir(s));
             }
         } else {
             let dir = if rest.is_empty() || rest == "." { base.to_path_buf() } else { base.join(rest.trim_end_matches("/.")) };
-            if dir.is_dir() {
+            if vfs.is_dir(&dir) {
                 push(Mount::Dir(dir));
             }
         }
@@ -91,17 +90,18 @@ fn strip_macro<'a>(p: &'a str, mac: &str) -> Option<&'a str> {
 }
 
 /// Reads `<game_dir>/gameinfo.txt` and returns its mounts (empty if missing or malformed).
-pub fn load(game_dir: &Path) -> Vec<Mount> {
-    let Ok(bytes) = std::fs::read(game_dir.join("gameinfo.txt")) else { return vec![] };
+pub fn load(vfs: &dyn Vfs, game_dir: &Path) -> Vec<Mount> {
+    let Some(bytes) = vfs.read(&game_dir.join("gameinfo.txt")) else { return vec![] };
     match kv::parse(&String::from_utf8_lossy(&bytes)) {
-        Ok(root) => resolve(&parse_entries(&root), game_dir),
+        Ok(root) => resolve(vfs, &parse_entries(&root), game_dir),
         Err(_) => vec![],
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "local"))]
 mod tests {
     use super::*;
+    use crate::platform::LocalFs;
     use std::fs;
 
     fn tmp(name: &str) -> PathBuf {
@@ -133,6 +133,7 @@ mod tests {
         fs::write(root.join("hl2/hl2_misc_dir.vpk"), b"").unwrap();
         let entry = |p: &str| RawEntry { tags: vec!["game".into()], path: p.into() };
         let m = resolve(
+            &LocalFs,
             &[
                 entry("|gameinfo_path|custom/*"),
                 entry("|gameinfo_path|."),

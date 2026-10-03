@@ -342,7 +342,7 @@ impl App {
         if edits.is_empty() && new_conns.is_none() {
             return;
         }
-        let now = std::time::Instant::now();
+        let now = web_time::Instant::now();
         let key = edits.first().map(|e| match e {
             Edit::Set(k, _) | Edit::Remove(k) => k.clone(),
         });

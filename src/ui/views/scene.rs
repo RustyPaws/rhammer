@@ -92,7 +92,12 @@ impl App {
                     continue;
                 }
                 self.model_budget -= 1;
+                let mark = self.mats.fs.mark();
                 let m = crate::assets::mdl::load(&self.mats.fs, &p).map(std::rc::Rc::new);
+                if m.is_none() && self.mats.fs.stalled_since(mark) {
+                    self.model_starved = true;
+                    continue;
+                }
                 self.models.insert(p.clone(), m);
             }
             if let Some(Some(m)) = self.models.get(&p) {

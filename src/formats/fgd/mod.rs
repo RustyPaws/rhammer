@@ -3,6 +3,7 @@
 mod lexer;
 
 use lexer::{tokenize, T};
+use crate::platform::Vfs;
 use glam::DVec3;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -144,26 +145,23 @@ fn strs(args: &[T]) -> Vec<String> {
 }
 
 impl Fgd {
-    pub fn load(path: &Path) -> Fgd {
+    pub fn load(vfs: &dyn Vfs, path: &Path) -> Fgd {
         let mut fgd = Fgd::default();
         let mut seen = Vec::new();
-        fgd.load_file(path, &mut seen);
+        fgd.load_file(vfs, path, &mut seen);
         fgd.resolve();
         fgd
     }
 
-    fn load_file(&mut self, path: &Path, seen: &mut Vec<PathBuf>) {
+    fn load_file(&mut self, vfs: &dyn Vfs, path: &Path, seen: &mut Vec<PathBuf>) {
         let canon = path.to_path_buf();
         if seen.contains(&canon) {
             return;
         }
         seen.push(canon);
-        let bytes = match std::fs::read(path) {
-            Ok(b) => b,
-            Err(e) => {
-                self.diagnostics.push(format!("{}: cannot read file: {e}", path.display()));
-                return;
-            }
+        let Some(bytes) = vfs.read(path) else {
+            self.diagnostics.push(format!("{}: cannot read file", path.display()));
+            return;
         };
         let text = String::from_utf8_lossy(&bytes).into_owned();
         let (spanned, errors) = tokenize(&text);
@@ -182,7 +180,7 @@ impl Fgd {
                 "include" => {
                     if let Some(f) = p.string() {
                         let inc = path.parent().unwrap_or(Path::new(".")).join(f);
-                        self.load_file(&inc, seen);
+                        self.load_file(vfs, &inc, seen);
                     }
                 }
                 "baseclass" | "pointclass" | "solidclass" | "npcclass" | "keyframeclass" | "moveclass"

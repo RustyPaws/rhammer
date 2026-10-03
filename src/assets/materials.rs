@@ -4,6 +4,7 @@ use crate::assets::gamefs::GameFs;
 use crate::formats::vtf;
 use crate::kv::{self as kv, Node, Value};
 use std::collections::HashMap;
+use crate::platform::SharedVfs;
 use std::path::Path;
 
 #[derive(Clone, Debug)]
@@ -47,8 +48,8 @@ fn find_key(nodes: &[Node], key: &str) -> Option<String> {
 }
 
 impl Materials {
-    pub fn new(game_dir: &Path) -> Materials {
-        let fs = GameFs::new(game_dir);
+    pub fn new(vfs: SharedVfs, game_dir: &Path) -> Materials {
+        let fs = GameFs::new(vfs, game_dir);
         let all: Vec<String> = fs
             .list("materials/", "vmt")
             .into_iter()
@@ -107,6 +108,7 @@ impl Materials {
             return None;
         }
         self.budget -= 1;
+        let mark = self.fs.mark();
         let mut info = MatInfo { w: 64, h: 64, avg: [0.6, 0.6, 0.6], has_texture: false };
         let mode = self.alpha_mode(&key, 0);
         if let Some(tex) = self.base_texture(&key, 0) {
@@ -131,16 +133,27 @@ impl Materials {
                 }
             }
         }
+        if !info.has_texture && self.fs.stalled_since(mark) {
+            // the files have not all arrived yet: look again next frame
+            self.starved = true;
+            return None;
+        }
         self.info.insert(key, info.clone());
         if info.has_texture { Some(info) } else { None }
     }
 
-    /// Small RGBA preview for the texture browser.
+    /// Files are still being fetched, so a missing result may change.
+    pub fn loading(&self) -> bool {
+        self.fs.pending()
+    }
+
+    /// Small RGBA preview for the texture browser. `None` also while its files are loading.
     pub fn thumb(&mut self, mat: &str) -> Option<(u32, u32, Vec<u8>)> {
         let key = mat.to_ascii_lowercase();
         if let Some(t) = self.thumbs.get(&key) {
             return t.clone();
         }
+        let mark = self.fs.mark();
         let mut res = None;
         if let Some(tex) = self.base_texture(&key, 0) {
             let tex = tex.replace('\\', "/").to_ascii_lowercase();
@@ -149,6 +162,9 @@ impl Materials {
                     res = Some((img.w, img.h, img.rgba));
                 }
             }
+        }
+        if res.is_none() && self.fs.stalled_since(mark) {
+            return None;
         }
         self.thumbs.insert(key, res.clone());
         res

@@ -1,0 +1,77 @@
+name: Web
+
+# Builds the wasm editor, publishes it to GitHub Pages and, on version tags,
+# attaches the same build to the GitHub release as a zip.
+
+on:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: web
+      - uses: jetli/trunk-action@v0.5.0
+      - uses: actions/configure-pages@v5
+        id: pages
+      - name: Build
+        run: trunk build --release --locked --public-url "${{ steps.pages.outputs.base_path }}/"
+      - name: Package release zip
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          name="rhammer-${{ github.ref_name }}-web"
+          cp -r dist "$name"
+          zip -r "$name.zip" "$name"
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+      - uses: actions/upload-artifact@v4
+        if: startsWith(github.ref, 'refs/tags/v')
+        with:
+          name: web-release
+          path: rhammer-*-web.zip
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: web-release
+          path: dist
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true

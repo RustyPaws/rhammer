@@ -4,13 +4,30 @@ version = "0.2.1"
 edition = "2021"
 license = "MIT"
 
+[features]
+# `local`: native desktop build (std::fs game access, compilers, native dialogs).
+# `web`: wasm32 build (File System Access API, no compilers).
+default = ["local"]
+local = ["dep:rfd"]
+web = ["dep:wasm-bindgen", "dep:wasm-bindgen-futures", "dep:web-sys", "dep:js-sys", "dep:console_error_panic_hook"]
+
 [dependencies]
-eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow", "x11", "wayland"] }
+eframe = { version = "0.36.2", default-features = false, features = ["default_fonts", "glow"] }
 glam = "0.33"
 anyhow = "1"
 logos = "0.16"
 egui-snarl = { version = "0.12", default-features = false }
-rfd = "0.15"
+rfd = { version = "0.15", optional = true }
+# `Instant` that also works in the browser (re-exports std's on desktop)
+web-time = "1"
+wasm-bindgen = { version = "0.2", optional = true }
+wasm-bindgen-futures = { version = "0.4", optional = true }
+js-sys = { version = "0.3", optional = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+web-sys = { version = "0.3", optional = true, features = ["Window", "Document", "Element", "HtmlCanvasElement"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+eframe = { version = "0.36.2", default-features = false, features = ["x11", "wayland"] }
 
 [profile.dev]
 opt-level = 2
