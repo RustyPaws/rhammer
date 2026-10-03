@@ -44,6 +44,8 @@ pub enum Drag {
     BlockResize { view: usize, hx: i32, hy: i32, orig: (DVec3, DVec3) },
     ClipLine { view: usize },
     Rotate { view: usize, center: DVec3, start_angle: f64, angle: f64 },
+    /// Dragging the origin marker of the selected entity; `orig` is the origin when the drag began.
+    Origin { view: usize, id: u32, orig: DVec3, cur: (f64, f64) },
 }
 
 #[derive(Default)]

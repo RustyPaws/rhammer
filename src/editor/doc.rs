@@ -3,7 +3,8 @@
 use crate::formats::fgd::Fgd;
 use crate::editor::geom::{self, Plane, SolidGeo};
 use crate::kv::{Node, NodeList, Value};
-use crate::formats::vmf::{fmt, fmt_vec3, Entity, Map, Solid};
+use crate::formats::vmf::{fmt, fmt_vec3, parse_vec3, Entity, Map, Solid};
+pub use crate::editor::direction::{angles_matrix, matrix_angles};
 use glam::{DMat3, DQuat, DVec3};
 use std::collections::{BTreeSet, HashMap};
 use std::path::PathBuf;
@@ -80,24 +81,6 @@ pub fn entity_model(e: &Entity, fgd: &Fgd) -> Option<String> {
         None => fgd.get(e.classname()).and_then(|c| c.model.clone()).filter(|m| m.to_ascii_lowercase().ends_with(".mdl"))?,
     };
     Some(m.to_ascii_lowercase().replace('\\', "/"))
-}
-
-pub fn angles_matrix(a: DVec3) -> DMat3 {
-    // Source: yaw about Z, pitch about Y (positive = down), roll about X.
-    let (p, y, r) = (a.x.to_radians(), a.y.to_radians(), a.z.to_radians());
-    DMat3::from_rotation_z(y) * DMat3::from_rotation_y(p) * DMat3::from_rotation_x(r)
-}
-
-pub fn matrix_angles(m: DMat3) -> DVec3 {
-    let yaw = m.x_axis.y.atan2(m.x_axis.x);
-    let pitch = (-m.x_axis.z).clamp(-1.0, 1.0).asin();
-    let roll = m.y_axis.z.atan2(m.z_axis.z);
-    let r = |v: f64| {
-        let d = v.to_degrees();
-        let d = (d * 1000.0).round() / 1000.0;
-        if d.abs() < 1e-6 { 0.0 } else { d }
-    };
-    DVec3::new(r(pitch), r(yaw), r(roll))
 }
 
 impl Doc {
@@ -315,28 +298,38 @@ impl Doc {
                 let o = xf.point(e.origin());
                 e.set_origin(geom::snap_near(o));
             }
-            match xf {
-                Xform::Rotate { q, .. } if e.get("origin").is_some() => {
-                    let cur = angles_matrix(e.angles());
-                    let new = DMat3::from_quat(*q) * cur;
-                    e.set("angles", fmt_vec3(matrix_angles(new)));
+            for key in ["angles", "movedir"] {
+                // point entities always carry angles; brush entities only when they have the key
+                if e.get(key).is_none() && !(key == "angles" && e.get("origin").is_some()) {
+                    continue;
                 }
-                Xform::Mirror { axis, .. } if e.get("origin").is_some() => {
-                    // mirror the yaw only (good enough for entities)
-                    let mut a = e.angles();
-                    if *axis == 0 {
-                        a.y = 180.0 - a.y;
-                    } else if *axis == 1 {
-                        a.y = -a.y;
-                    } else {
-                        a.x = -a.x;
+                let Some(cur) = e.get(key).map_or(Some(DVec3::ZERO), parse_vec3) else { continue };
+                let new = match xf {
+                    Xform::Rotate { q, .. } => matrix_angles(DMat3::from_quat(*q) * angles_matrix(cur)),
+                    Xform::Mirror { axis, .. } => {
+                        // mirror the yaw only (good enough for entities)
+                        let mut a = cur;
+                        match axis {
+                            0 => a.y = 180.0 - a.y,
+                            1 => a.y = -a.y,
+                            _ => a.x = -a.x,
+                        }
+                        a
                     }
-                    e.set("angles", fmt_vec3(a));
-                }
-                _ => {}
+                    _ => continue,
+                };
+                e.set(key, fmt_vec3(new));
             }
         }
         self.touch();
+    }
+
+    /// Sets the `origin` key of one entity (creating it for brush entities) without moving its brushes.
+    pub fn set_entity_origin(&mut self, id: u32, origin: DVec3) {
+        if let Some(e) = self.map.entities.iter_mut().find(|e| e.id == id) {
+            e.set_origin(origin);
+            self.touch();
+        }
     }
 
     pub fn delete(&mut self, sel: &Sel) {
@@ -501,6 +494,15 @@ impl Doc {
             Node::str("visgroupshown", "1"),
             Node::str("visgroupautoshown", "1"),
         ];
+        // origin defaults to the centre of the brushes
+        let (mut min, mut max) = (DVec3::splat(f64::MAX), DVec3::splat(f64::MIN));
+        for g in e.solids.iter().filter_map(|s| self.geo.get(&s.id)).filter(|g| g.valid) {
+            min = min.min(g.min);
+            max = max.max(g.max);
+        }
+        if min.x <= max.x {
+            e.set_origin(geom::snap_near((min + max) * 0.5));
+        }
         self.map.entities.push(e);
         self.touch();
         Some(id)
