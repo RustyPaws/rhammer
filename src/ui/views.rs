@@ -276,11 +276,19 @@ impl App {
                 }
             }
         };
-        for id in self.doc.all_ids() {
+        // selected objects go last so they are drawn on top of everything else
+        let mut ids: Vec<u32> = self.doc.all_ids().into_iter().collect();
+        ids.sort_by_key(|id| self.sel.contains(id));
+        let mut flushed = false;
+        for id in ids {
             if self.doc.is_hidden(id) {
                 continue;
             }
             let selected = self.sel.contains(&id);
+            if selected && !flushed {
+                painter.extend(std::mem::take(&mut shapes));
+                flushed = true;
+            }
             let (color, solids_ids, is_point, ent): (Color32, Vec<u32>, bool, Option<&crate::formats::vmf::Entity>) = match self.doc.index.get(&id) {
                 Some(Obj::WorldSolid(_)) => (sel_dim, vec![id], false, None),
                 Some(Obj::Entity(i)) => {
