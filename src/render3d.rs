@@ -32,8 +32,8 @@ pub struct Scene {
     pub lines: Vec<Vertex>,
     /// Outlines that belong to the world mesh (point entity boxes).
     pub world_lines: Vec<Vertex>,
-    /// RGBA textures waiting for upload: (material, w, h, data).
-    pub uploads: Vec<(String, u32, u32, Vec<u8>)>,
+    /// RGBA textures waiting for upload: (material, w, h, data, alpha mode).
+    pub uploads: Vec<(String, u32, u32, Vec<u8>, u8)>,
     pub mvp: Mat4,
     pub lighting: bool,
     pub cull: bool,
@@ -63,11 +63,12 @@ pub struct Gpu {
     vao: glow::VertexArray,
     white: glow::Texture,
     /// Shared by every scene, so the model viewer reuses textures the 3D view uploaded.
-    textures: HashMap<String, glow::Texture>,
+    textures: HashMap<String, (glow::Texture, u8)>,
     u_mvp: Option<glow::UniformLocation>,
     u_tex: Option<glow::UniformLocation>,
     u_use_tex: Option<glow::UniformLocation>,
     u_light: Option<glow::UniformLocation>,
+    u_amode: Option<glow::UniformLocation>,
 }
 
 /// Which scene a paint callback draws.
@@ -100,11 +101,17 @@ void main(){ gl_Position = mvp*vec4(pos,1.0); vn=nrm; vuv=uv; vcol=col; }
 
 const FS: &str = r#"#version 330 core
 in vec3 vn; in vec2 vuv; in vec4 vcol;
-uniform sampler2D tex; uniform int use_tex; uniform int light;
+uniform sampler2D tex; uniform int use_tex; uniform int light; uniform int amode;
 out vec4 o;
 void main(){
   vec4 c = vcol;
-  if(use_tex==1) c.rgb *= texture(tex, vuv).rgb; // alpha is not transparency in Source materials
+  if(use_tex==1){
+    vec4 t = texture(tex, vuv);
+    c.rgb *= t.rgb;
+    // texture alpha is only transparency when the VMT says so (amode 1 = alphatest, 2 = translucent)
+    if(amode==1){ if(t.a < 0.5) discard; }
+    else if(amode==2) c.a *= t.a;
+  }
   if(light==1){
     float l = 0.55 + 0.45*abs(dot(normalize(vn), normalize(vec3(0.35,0.5,0.8))));
     c.rgb *= l;
@@ -155,6 +162,7 @@ impl Gpu {
                 u_tex: gl.get_uniform_location(prog, "tex"),
                 u_use_tex: gl.get_uniform_location(prog, "use_tex"),
                 u_light: gl.get_uniform_location(prog, "light"),
+                u_amode: gl.get_uniform_location(prog, "amode"),
                 prog,
                 vao,
                 white,
@@ -202,7 +210,7 @@ impl Gpu {
 
     fn sync(&mut self, gl: &glow::Context, scene: &mut Scene, bufs: &mut Bufs) {
         unsafe {
-            for (name, w, h, data) in scene.uploads.drain(..) {
+            for (name, w, h, data, mode) in scene.uploads.drain(..) {
                 if let Ok(t) = gl.create_texture() {
                     gl.bind_texture(glow::TEXTURE_2D, Some(t));
                     gl.tex_image_2d(
@@ -221,7 +229,7 @@ impl Gpu {
                     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_MAG_FILTER, glow::LINEAR as i32);
                     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_S, glow::REPEAT as i32);
                     gl.tex_parameter_i32(glow::TEXTURE_2D, glow::TEXTURE_WRAP_T, glow::REPEAT as i32);
-                    if let Some(old) = self.textures.insert(name, t) {
+                    if let Some((old, _)) = self.textures.insert(name, (t, mode)) {
                         gl.delete_texture(old);
                     }
                 }
@@ -269,19 +277,35 @@ impl Gpu {
             }
             gl.front_face(glow::CCW);
             gl.cull_face(glow::BACK);
-            for (mat, buf, n) in bufs.world.iter().chain(&bufs.models) {
-                // the untextured batch (entity boxes) is drawn two-sided
-                if mat.is_empty() || !scene.cull {
-                    gl.disable(glow::CULL_FACE);
-                } else {
-                    gl.enable(glow::CULL_FACE);
+            // pass 0 draws opaque and alpha-tested surfaces, pass 1 the translucent ones on top
+            for pass in 0..2 {
+                if pass == 1 {
+                    gl.enable(glow::BLEND);
+                    gl.blend_func(glow::SRC_ALPHA, glow::ONE_MINUS_SRC_ALPHA);
+                    gl.depth_mask(false);
                 }
-                let tex = self.textures.get(mat);
-                gl.bind_texture(glow::TEXTURE_2D, Some(*tex.unwrap_or(&self.white)));
-                gl.uniform_1_i32(self.u_use_tex.as_ref(), tex.is_some() as i32);
-                Self::bind_attribs(gl, *buf);
-                gl.draw_arrays(glow::TRIANGLES, 0, *n);
+                for (mat, buf, n) in bufs.world.iter().chain(&bufs.models) {
+                    let tex = self.textures.get(mat);
+                    let mode = tex.map_or(0, |t| t.1);
+                    if (mode == 2) != (pass == 1) {
+                        continue;
+                    }
+                    // the untextured batch (entity boxes) is drawn two-sided
+                    if mat.is_empty() || !scene.cull {
+                        gl.disable(glow::CULL_FACE);
+                    } else {
+                        gl.enable(glow::CULL_FACE);
+                    }
+                    gl.bind_texture(glow::TEXTURE_2D, Some(tex.map_or(self.white, |t| t.0)));
+                    gl.uniform_1_i32(self.u_use_tex.as_ref(), tex.is_some() as i32);
+                    gl.uniform_1_i32(self.u_amode.as_ref(), mode as i32);
+                    Self::bind_attribs(gl, *buf);
+                    gl.draw_arrays(glow::TRIANGLES, 0, *n);
+                }
             }
+            gl.depth_mask(true);
+            gl.disable(glow::BLEND);
+            gl.uniform_1_i32(self.u_amode.as_ref(), 0);
             if scene.wireframe {
                 gl.polygon_mode(glow::FRONT_AND_BACK, glow::FILL);
             }

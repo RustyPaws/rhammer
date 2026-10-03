@@ -100,8 +100,9 @@ pub struct MatInfo {
 pub struct Materials {
     pub fs: GameFs,
     pub info: HashMap<String, MatInfo>,
-    /// Decoded RGBA images awaiting upload to the GPU: (material, w, h, rgba)
-    pub ready: Vec<(String, u32, u32, Vec<u8>)>,
+    /// Decoded RGBA images awaiting upload to the GPU: (material, w, h, rgba, alpha mode).
+    /// Alpha mode: 0 = opaque, 1 = alpha test ($alphatest), 2 = blended ($translucent).
+    pub ready: Vec<(String, u32, u32, Vec<u8>, u8)>,
     /// For egui previews: material -> RGBA (<=128px)
     pub thumbs: HashMap<String, Option<(u32, u32, Vec<u8>)>>,
     pub all: Vec<String>,
@@ -156,6 +157,28 @@ impl Materials {
         None
     }
 
+    /// Transparency declared by the VMT: 0 = opaque, 1 = alpha test, 2 = translucent.
+    /// Texture alpha is otherwise a mask (specular, self-illum, ...) and must be ignored.
+    fn alpha_mode(&self, mat: &str, depth: u32) -> u8 {
+        if depth > 4 {
+            return 0;
+        }
+        let Some(bytes) = self.fs.read(&format!("materials/{}.vmt", mat.to_ascii_lowercase())) else { return 0 };
+        let Ok(nodes) = kv::parse(&String::from_utf8_lossy(&bytes)) else { return 0 };
+        let on = |k: &str| find_key(&nodes, k).map_or(false, |v| v.trim().trim_matches('"') != "0" && !v.trim().is_empty());
+        if on("$translucent") {
+            return 2;
+        }
+        if on("$alphatest") {
+            return 1;
+        }
+        if let Some(inc) = find_key(&nodes, "include") {
+            let inc = inc.trim_start_matches("materials/").trim_end_matches(".vmt").to_string();
+            return self.alpha_mode(&inc, depth + 1);
+        }
+        0
+    }
+
     /// Get (loading on first use) material info. Textures are queued for GPU upload.
     pub fn get(&mut self, mat: &str) -> Option<MatInfo> {
         let key = mat.to_ascii_lowercase().replace('\\', "/");
@@ -168,6 +191,7 @@ impl Materials {
         }
         self.budget -= 1;
         let mut info = MatInfo { w: 64, h: 64, avg: [0.6, 0.6, 0.6], has_texture: false };
+        let mode = self.alpha_mode(&key, 0);
         if let Some(tex) = self.base_texture(&key, 0) {
             let tex = tex.replace('\\', "/").to_ascii_lowercase();
             if let Some(bytes) = self.fs.read(&format!("materials/{tex}.vtf")) {
@@ -186,7 +210,7 @@ impl Materials {
                         avg: [r as f32 / n, g as f32 / n, b as f32 / n],
                         has_texture: true,
                     };
-                    self.ready.push((key.clone(), img.w, img.h, img.rgba));
+                    self.ready.push((key.clone(), img.w, img.h, img.rgba, mode));
                 }
             }
         }
