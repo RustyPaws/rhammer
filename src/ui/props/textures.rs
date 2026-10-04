@@ -47,27 +47,25 @@ impl App {
         self.for_each_face(|sd| sd.material = m.clone());
     }
 
-    /// Copy the material of the selected face onto `target` (falls back to the current
-    /// material when nothing else is selected), leaving the face selection untouched.
-    /// With `wrap`, the texture mapping of the first selected face is carried over the
-    /// shared edge so the texture continues seamlessly (walls line up).
+    /// Right-click in the texture tool: copy the selected face's material onto `target`.
+    /// Does nothing without a selected face. The selection is left as is.
+    /// With `wrap` (Alt), the mapping is also carried over the shared edge so the texture continues.
     pub fn paint_face(&mut self, target: u32, wrap: bool) {
-        let src = self.faces.iter().find(|f| **f != target).copied();
-        let src_side = src.and_then(|id| {
-            self.doc.map.world.solids.iter().chain(self.doc.map.entities.iter().flat_map(|e| e.solids.iter()))
-                .flat_map(|s| s.sides.iter()).find(|s| s.id == id).cloned()
-        });
+        let Some(src) = self.faces.iter().next().copied() else { return };
+        if src == target {
+            return;
+        }
+        let Some(ss) = self.doc.map.world.solids.iter().chain(self.doc.map.entities.iter().flat_map(|e| e.solids.iter()))
+            .flat_map(|s| s.sides.iter()).find(|s| s.id == src).cloned() else { return };
+        // texture size in texels, so shifts can be wrapped into [0, size)
+        let (tw, th) = self.material_color(&ss.material).1.map(|(w, h)| (w as f64, h as f64)).unwrap_or((0.0, 0.0));
+        let wrap_shift = |shift: f64, size: f64| if size > 0.0 { shift.rem_euclid(size) } else { shift };
         self.doc.checkpoint();
-        let m = self.cur_mat.clone();
         for s in self.doc.map.world.solids.iter_mut().chain(self.doc.map.entities.iter_mut().flat_map(|e| e.solids.iter_mut())) {
             for sd in &mut s.sides {
                 if sd.id != target {
                     continue;
                 }
-                let Some(ss) = &src_side else {
-                    sd.material = m.clone();
-                    continue;
-                };
                 sd.material = ss.material.clone();
                 if !wrap {
                     continue;
@@ -93,6 +91,9 @@ impl App {
                 // keep the mapping continuous at the shared edge point p0
                 u.shift = ss.uaxis.shift + p0.dot(ss.uaxis.vec) / ss.uaxis.scale - p0.dot(u.vec) / u.scale;
                 v.shift = ss.vaxis.shift + p0.dot(ss.vaxis.vec) / ss.vaxis.scale - p0.dot(v.vec) / v.scale;
+                // the texture repeats every `size` texels, so drop whole tiles instead of letting shifts grow
+                u.shift = wrap_shift(u.shift, tw);
+                v.shift = wrap_shift(v.shift, th);
                 sd.uaxis = u;
                 sd.vaxis = v;
                 sd.rotation = ss.rotation;
@@ -139,6 +140,7 @@ impl App {
             ui.label(RichText::new(format!("{} face(s) selected", self.faces.len())).strong());
             let mut fe = self.face_edit.clone();
             let mut changed = false;
+            let mut rot_changed = false;
             egui::Grid::new("faceedit").num_columns(3).spacing([6.0, 4.0]).show(ui, |ui| {
                 ui.label("Scale");
                 changed |= ui.add(egui::DragValue::new(&mut fe.uscale).speed(0.01).range(0.001..=64.0)).changed();
@@ -149,7 +151,8 @@ impl App {
                 changed |= ui.add(egui::DragValue::new(&mut fe.vshift).speed(1.0)).changed();
                 ui.end_row();
                 ui.label("Rotation");
-                changed |= ui.add(egui::DragValue::new(&mut fe.rotation).speed(1.0)).changed();
+                rot_changed = ui.add(egui::DragValue::new(&mut fe.rotation).speed(1.0)).changed();
+                changed |= rot_changed;
                 ui.end_row();
                 ui.label("Lightmap");
                 changed |= ui.add(egui::DragValue::new(&mut fe.lightmap).range(1..=1024)).changed();
@@ -163,8 +166,19 @@ impl App {
                     sd.vaxis.scale = fe.vscale;
                     sd.uaxis.shift = fe.ushift;
                     sd.vaxis.shift = fe.vshift;
-                    sd.rotation = fe.rotation;
                     sd.lightmap = fe.lightmap;
+                    if rot_changed {
+                        // `rotation` is informational in VMF: the actual mapping lives in the
+                        // axes, so rotate them about the texture plane normal by the delta
+                        let mut n = sd.uaxis.vec.cross(sd.vaxis.vec);
+                        if n.length_squared() < 1e-12 {
+                            n = geom::Plane::from_points(&sd.plane).map(|p| p.n).unwrap_or(glam::DVec3::Z);
+                        }
+                        let q = glam::DQuat::from_axis_angle(n.normalize(), (fe.rotation - sd.rotation).to_radians());
+                        sd.uaxis.vec = q * sd.uaxis.vec;
+                        sd.vaxis.vec = q * sd.vaxis.vec;
+                        sd.rotation = fe.rotation;
+                    }
                 });
             }
             ui.horizontal_wrapped(|ui| {
