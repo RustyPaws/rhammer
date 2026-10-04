@@ -66,7 +66,11 @@ pub fn angles_editor(ui: &mut egui::Ui, value: &mut String) -> bool {
     let mut a = vmf::parse_vec3(value).unwrap_or_default();
     let mut changed = false;
     ui.vertical(|ui| {
-        ui.horizontal(|ui| {
+        // the dial goes beside the pitch/yaw/roll fields, or above them when there is no room:
+        // anything wider than the panel would widen every field after it
+        let beside = ui.available_width() >= DIAL_SIZE + 130.0;
+        let layout = if beside { egui::Layout::left_to_right(egui::Align::Min) } else { egui::Layout::top_down(egui::Align::Min) };
+        ui.with_layout(layout, |ui| {
             let dir = angles_matrix(a) * DVec3::X;
             let vertical = dir.x.abs() < 0.05 && dir.y.abs() < 0.05;
             if let Some(yaw) = dial(ui, dir, dir.z < 0.0 && vertical) {

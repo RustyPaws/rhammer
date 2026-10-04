@@ -127,7 +127,7 @@ impl App {
         ui.horizontal(|ui| {
             ui.add(egui::TextEdit::singleline(&mut self.cur_mat).desired_width(ui.available_width() - 8.0));
         });
-        ui.horizontal(|ui| {
+        ui.horizontal_wrapped(|ui| {
             if ui.button("Apply to faces").clicked() {
                 self.apply_material_to_faces();
             }

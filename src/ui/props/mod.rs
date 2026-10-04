@@ -11,6 +11,25 @@ mod textures;
 mod visgroups;
 mod widgets;
 
+/// Scrolls both ways. Widgets still size themselves to the visible width, and whatever can't
+/// shrink any further stays reachable through the horizontal scrollbar.
+pub(crate) fn panel_scroll<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    egui::ScrollArea::both().auto_shrink([false, false]).show(ui, add).inner
+}
+
+/// Lays a row out right to left: add the trailing widgets first, then call [`fill_rest`],
+/// which gets exactly the width that is left.
+pub(crate) fn trailing<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    // the outer row keeps it one line high: on its own, right_to_left in a vertical layout
+    // would centre itself in all the height that is left
+    ui.horizontal(|ui| ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), add).inner).inner
+}
+
+/// Inside [`trailing`]: the remaining width, left to right.
+pub(crate) fn fill_rest<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), add).inner
+}
+
 impl App {
     pub(crate) fn object_tab(&mut self, ui: &mut egui::Ui) {
         let ents: Vec<u32> = self.sel.iter().copied().filter(|i| self.doc.entity(*i).is_some()).collect();
@@ -22,7 +41,7 @@ impl App {
             }
             return;
         }
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        panel_scroll(ui, |ui| {
             if !solids.is_empty() {
                 ui.label(RichText::new(format!("{} brush(es)", solids.len())).strong());
                 ui.horizontal(|ui| {
@@ -31,7 +50,7 @@ impl App {
                     }
                     ui.add(egui::DragValue::new(&mut self.hollow_thickness).prefix("wall ").range(1.0..=512.0));
                 });
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label("Tie to entity:");
                     let cur = self.default_solid_class();
                     let mut chosen: Option<String> = None;

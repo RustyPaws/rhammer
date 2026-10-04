@@ -59,7 +59,12 @@ impl App {
 
         egui::CollapsingHeader::new("Properties").default_open(true).show(ui, |ui| {
             let mut shown: Vec<String> = vec!["classname".into(), "spawnflags".into()];
-            egui::Grid::new("props").num_columns(2).spacing([8.0, 4.0]).striped(true).show(ui, |ui| {
+            // long FGD names are cut short (the full name is in the tooltip) so values keep their room
+            let label_w = (ui.available_width() * 0.4).clamp(60.0, 160.0);
+            // the value column is capped to the visible width: Grid otherwise keeps last frame's
+            // widest cell, and one wide editor would stretch every text field past the edge
+            let value_w = (ui.available_width() - label_w - 8.0).max(60.0);
+            egui::Grid::new("props").num_columns(2).spacing([8.0, 4.0]).max_col_width(label_w.max(value_w)).striped(true).show(ui, |ui| {
                 if let Some(c) = &class {
                     for p in &c.props {
                         if p.name.eq_ignore_ascii_case("classname") || p.name.eq_ignore_ascii_case("spawnflags") || p.ty == "void" {
@@ -67,7 +72,7 @@ impl App {
                         }
                         shown.push(p.name.to_ascii_lowercase());
                         let label = if p.display.is_empty() { p.name.clone() } else { p.display.clone() };
-                        let r = ui.label(label);
+                        let r = key_label(ui, label, label_w);
                         if !p.help.is_empty() {
                             r.on_hover_text(format!("{}\n{}", p.name, p.help));
                         } else {
@@ -102,7 +107,7 @@ impl App {
                     if shown.contains(&lk) || lk == "id" {
                         continue;
                     }
-                    ui.label(k.clone());
+                    key_label(ui, k.clone(), label_w).on_hover_text(k);
                     let mut val = v.clone();
                     ui.horizontal(|ui| {
                         if ui.add(egui::TextEdit::singleline(&mut val).desired_width(ui.available_width() - 28.0)).changed() {
@@ -118,9 +123,16 @@ impl App {
             ui.horizontal(|ui| {
                 let id = ui.id().with("newkey");
                 let mut kv: (String, String) = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
-                ui.add(egui::TextEdit::singleline(&mut kv.0).hint_text("new key").desired_width(90.0));
-                ui.add(egui::TextEdit::singleline(&mut kv.1).hint_text("value").desired_width(90.0));
-                if ui.button("Add").clicked() && !kv.0.is_empty() {
+                let mut add = false;
+                trailing(ui, |ui| {
+                    add = ui.button("Add").clicked();
+                    fill_rest(ui, |ui| {
+                        let w = ((ui.available_width() - ui.spacing().item_spacing.x) / 2.0).max(40.0);
+                        ui.add(egui::TextEdit::singleline(&mut kv.0).hint_text("new key").desired_width(w));
+                        ui.add(egui::TextEdit::singleline(&mut kv.1).hint_text("value").desired_width(w));
+                    });
+                });
+                if add && !kv.0.is_empty() {
                     edits.push(Edit::Set(kv.0.clone(), kv.1.clone()));
                     kv = Default::default();
                 }
@@ -185,7 +197,7 @@ impl App {
                     self.anim_stamp += 1;
                 }
                 let dur = seq.duration();
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if ui.button(if self.anim_play { "⏸" } else { "▶" }).on_hover_text("Play / pause model animations").clicked() {
                         self.anim_play = !self.anim_play;
                     }
@@ -239,59 +251,66 @@ impl App {
                         ui.horizontal(|ui| {
                             ui.label("When");
                             let outs: Vec<String> = class.as_ref().map(|c| c.outputs.iter().map(|o| o.name.clone()).collect()).unwrap_or_default();
-                            changed |= ui.add(egui::TextEdit::singleline(&mut c.output).desired_width(110.0)).changed();
-                            ui.menu_button("v", |ui| {
-                                for o in outs {
-                                    if ui.button(&o).clicked() {
-                                        c.output = o;
-                                        changed = true;
-                                        ui.close();
-                                    }
+                            trailing(ui, |ui| {
+                                if ui.small_button("X").on_hover_text("remove output").clicked() {
+                                    remove = Some(i);
                                 }
-                            });
-                            if ui.small_button("X").clicked() {
-                                remove = Some(i);
-                            }
-                        });
-                        ui.horizontal(|ui| {
-                            ui.label("fires");
-                            changed |= ui.add(egui::TextEdit::singleline(&mut c.target).hint_text("target").desired_width(100.0)).changed();
-                            ui.menu_button("v", |ui| {
-                                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                                    for t in &tnames {
-                                        if ui.button(t).clicked() {
-                                            c.target = t.clone();
+                                ui.menu_button("v", |ui| {
+                                    for o in outs {
+                                        if ui.button(&o).clicked() {
+                                            c.output = o;
                                             changed = true;
                                             ui.close();
                                         }
                                     }
                                 });
+                                fill_rest(ui, |ui| changed |= ui.add(egui::TextEdit::singleline(&mut c.output).desired_width(ui.available_width())).changed());
+                            });
+                        });
+                        ui.horizontal(|ui| {
+                            ui.label("fires");
+                            trailing(ui, |ui| {
+                                ui.menu_button("v", |ui| {
+                                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                        for t in &tnames {
+                                            if ui.button(t).clicked() {
+                                                c.target = t.clone();
+                                                changed = true;
+                                                ui.close();
+                                            }
+                                        }
+                                    });
+                                });
+                                fill_rest(ui, |ui| changed |= ui.add(egui::TextEdit::singleline(&mut c.target).hint_text("target").desired_width(ui.available_width())).changed());
                             });
                         });
                         ui.horizontal(|ui| {
                             ui.label("input");
-                            changed |= ui.add(egui::TextEdit::singleline(&mut c.input).desired_width(100.0)).changed();
                             // inputs of the target's class
                             let target_class = self.doc.map.entities.iter().find(|x| x.get("targetname") == Some(c.target.as_str())).map(|x| x.classname().to_string());
                             let inputs: Vec<String> = target_class
                                 .and_then(|c| self.fgd.get(&c))
                                 .map(|c| c.inputs.iter().map(|i| i.name.clone()).collect())
                                 .unwrap_or_else(|| vec!["Kill".into(), "Enable".into(), "Disable".into(), "Toggle".into(), "Trigger".into(), "Open".into(), "Close".into()]);
-                            ui.menu_button("v", |ui| {
-                                egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                                    for inp in inputs {
-                                        if ui.button(&inp).clicked() {
-                                            c.input = inp;
-                                            changed = true;
-                                            ui.close();
+                            trailing(ui, |ui| {
+                                ui.menu_button("v", |ui| {
+                                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+                                        for inp in inputs {
+                                            if ui.button(&inp).clicked() {
+                                                c.input = inp;
+                                                changed = true;
+                                                ui.close();
+                                            }
                                         }
-                                    }
+                                    });
                                 });
+                                fill_rest(ui, |ui| changed |= ui.add(egui::TextEdit::singleline(&mut c.input).desired_width(ui.available_width())).changed());
                             });
                         });
-                        ui.horizontal(|ui| {
+                        // wraps on a narrow panel instead of cutting "once" off
+                        ui.horizontal_wrapped(|ui| {
                             ui.label("param");
-                            changed |= ui.add(egui::TextEdit::singleline(&mut c.param).desired_width(80.0)).changed();
+                            changed |= ui.add(egui::TextEdit::singleline(&mut c.param).desired_width((ui.available_width() - 8.0).clamp(40.0, 120.0))).changed();
                             changed |= ui.add(egui::DragValue::new(&mut c.delay).prefix("delay ").speed(0.05).range(0.0..=3600.0)).changed();
                             let mut once = c.times == 1;
                             if ui.checkbox(&mut once, "once").changed() {
@@ -385,4 +404,10 @@ impl App {
         }
         self.doc.touch();
     }
+}
+
+/// A property name in the key column, cut to `width` so long names don't push the values out.
+fn key_label(ui: &mut egui::Ui, text: impl Into<egui::WidgetText>, width: f32) -> egui::Response {
+    let h = ui.spacing().interact_size.y;
+    ui.allocate_ui_with_layout(egui::vec2(width, h), egui::Layout::left_to_right(egui::Align::Center), |ui| ui.add(egui::Label::new(text).truncate())).inner
 }
