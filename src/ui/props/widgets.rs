@@ -19,19 +19,41 @@ pub(crate) fn filter_combo<'a>(ui: &mut egui::Ui, id_salt: &str, selected: &str,
     if let Some(w) = width {
         combo = combo.width(w);
     }
-    combo.show_ui(ui, |ui| {
-        ui.add(egui::TextEdit::singleline(filter).hint_text("filter…"));
+    // The popup body only runs while open, so a missing flag means this is the opening frame.
+    let init_id = ui.make_persistent_id(id_salt).with("filter_focused");
+    let out = combo.show_ui(ui, |ui| {
+        let edit = ui.add(egui::TextEdit::singleline(filter).hint_text("filter…"));
+        if !ui.data(|d| d.get_temp::<bool>(init_id).unwrap_or(false)) {
+            edit.request_focus();
+            ui.data_mut(|d| d.insert_temp(init_id, true));
+        }
         let f = filter.to_ascii_lowercase();
-        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-            for n in items.into_iter().filter(|n| f.is_empty() || n.to_ascii_lowercase().contains(&f)) {
-                if ui.selectable_label(n == selected, n).clicked() {
+        let enter = edit.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        // Keyed on the match count so the scroll area re-measures when the list grows.
+        let matched: Vec<&str> = items.into_iter().filter(|n| name_matches(&f, n)).collect();
+        if enter {
+            if let Some(n) = matched.first() {
+                picked = Some(n.to_string());
+                ui.close();
+            }
+        }
+        egui::ScrollArea::vertical().id_salt(matched.len()).max_height(360.0).auto_shrink([false, true]).show(ui, |ui| {
+            for n in &matched {
+                if ui.selectable_label(*n == selected, *n).clicked() {
                     picked = Some(n.to_string());
                     ui.close();
                 }
             }
         });
     });
+    if out.inner.is_none() {
+        ui.data_mut(|d| d.remove_temp::<bool>(init_id));
+    }
     picked
+}
+
+fn name_matches(filter_lower: &str, name: &str) -> bool {
+    filter_lower.is_empty() || name.to_ascii_lowercase().contains(filter_lower)
 }
 
 /// Returns true when the value changed.
