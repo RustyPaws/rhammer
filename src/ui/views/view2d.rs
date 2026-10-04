@@ -768,6 +768,17 @@ impl App {
                 self.apply_xform(Xform::Translate(t));
             }
         }
+        // context menu: right-drag pans, so only a right click without a drag gets here.
+        // Like Hammer, right-clicking an object that isn't selected selects it first.
+        if resp.secondary_clicked() {
+            if let Some(cp) = resp.interact_pointer_pos() {
+                if let Some(id) = self.pick_2d(vi, wpos(cp), 3.0 / view.zoom).filter(|id| !self.sel.contains(id)) {
+                    self.set_sel([id].into_iter().collect());
+                }
+            }
+        }
+        resp.context_menu(|ui| self.view_context_menu(ui));
+
         // maximize toggle
         if hover.is_some() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Z) && !i.modifiers.command) {
             self.maximized = if self.maximized.is_some() { None } else { Some(vi + 1) };

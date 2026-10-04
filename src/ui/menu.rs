@@ -54,35 +54,7 @@ impl App {
                 }
             }).response);
             bar.push(ui.menu_button("Edit", |ui| {
-                if ui.add_enabled(self.doc.can_undo(), egui::Button::new("Undo   Ctrl+Z")).clicked() {
-                    self.undo();
-                    ui.close();
-                }
-                if ui.add_enabled(self.doc.can_redo(), egui::Button::new("Redo   Ctrl+Y")).clicked() {
-                    self.redo();
-                    ui.close();
-                }
-                ui.separator();
-                if ui.button("Cut    Ctrl+X").clicked() {
-                    self.cut_selection();
-                    ui.close();
-                }
-                if ui.button("Copy   Ctrl+C").clicked() {
-                    self.copy_selection();
-                    ui.close();
-                }
-                if ui.button("Paste  Ctrl+V").clicked() {
-                    self.paste_clipboard();
-                    ui.close();
-                }
-                if ui.button("Duplicate  Ctrl+D").clicked() {
-                    self.duplicate_selection();
-                    ui.close();
-                }
-                if ui.button("Delete  Del").clicked() {
-                    self.delete_selection();
-                    ui.close();
-                }
+                self.edit_items(ui);
                 ui.separator();
                 if ui.button("Select all  Ctrl+A").clicked() {
                     let all: Sel = self.doc.all_ids().into_iter().filter(|i| !self.doc.is_hidden(*i)).collect();
@@ -230,6 +202,76 @@ impl App {
             }).response);
         });
         switch_on_hover(ui.ctx(), &bar);
+    }
+
+    /// Undo / clipboard / delete items, shared by the Edit menu and the 2D view context menu.
+    fn edit_items(&mut self, ui: &mut egui::Ui) {
+        let has_sel = !self.sel.is_empty();
+        let item = |ui: &mut egui::Ui, enabled: bool, label: &str| ui.add_enabled(enabled, egui::Button::new(label)).clicked();
+        if item(ui, self.doc.can_undo(), "Undo   Ctrl+Z") {
+            self.undo();
+            ui.close();
+        }
+        if item(ui, self.doc.can_redo(), "Redo   Ctrl+Y") {
+            self.redo();
+            ui.close();
+        }
+        ui.separator();
+        if item(ui, has_sel, "Cut    Ctrl+X") {
+            self.cut_selection();
+            ui.close();
+        }
+        if item(ui, has_sel, "Copy   Ctrl+C") {
+            self.copy_selection();
+            ui.close();
+        }
+        if item(ui, true, "Paste  Ctrl+V") {
+            self.paste_clipboard();
+            ui.close();
+        }
+        if item(ui, has_sel, "Duplicate  Ctrl+D") {
+            self.duplicate_selection();
+            ui.close();
+        }
+        if item(ui, has_sel, "Delete  Del") {
+            self.delete_selection();
+            ui.close();
+        }
+    }
+
+    /// Right-click menu of the 2D views, as in Hammer.
+    pub(crate) fn view_context_menu(&mut self, ui: &mut egui::Ui) {
+        let has_sel = !self.sel.is_empty();
+        let item = |ui: &mut egui::Ui, label: &str| ui.add_enabled(has_sel, egui::Button::new(label)).clicked();
+        if item(ui, "Properties...  Alt+Enter") {
+            self.open_properties();
+            ui.close();
+        }
+        ui.separator();
+        self.edit_items(ui);
+        ui.separator();
+        if item(ui, "Clear selection  Esc") {
+            self.set_sel(Sel::new());
+            ui.close();
+        }
+        if item(ui, "Frame selection  Shift+F") {
+            self.frame_selection();
+            ui.close();
+        }
+        ui.separator();
+        if item(ui, "Tie to entity  Ctrl+T") {
+            let c = self.default_solid_class();
+            self.tie_selection(&c);
+            ui.close();
+        }
+        if item(ui, "Move to world") {
+            self.move_to_world();
+            ui.close();
+        }
+        if item(ui, "Make hollow  Ctrl+H") {
+            self.hollow_selection();
+            ui.close();
+        }
     }
 }
 
