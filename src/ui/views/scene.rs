@@ -65,8 +65,47 @@ impl App {
             self.rebuild_overlay();
             self.overlay_key = okey;
         }
+        self.ensure_sprites();
         if let Ok(mut sh) = self.shared.lock() {
             sh.scene.uploads.append(&mut self.mats.ready);
+        }
+    }
+
+    /// Load (a few per frame) the icon sprites of point entities as egui textures for the 2D views.
+    pub(crate) fn ensure_sprites(&mut self) {
+        if self.sprites_key == self.doc.version && !self.sprites_pending {
+            return;
+        }
+        let mut names: Vec<String> =
+            self.doc.map.entities.iter().filter(|e| e.solids.is_empty()).filter_map(|e| crate::editor::doc::entity_sprite(e, &self.fgd)).collect();
+        names.sort_unstable();
+        names.dedup();
+        self.sprites_pending = false;
+        let mut loads = 4;
+        for n in names {
+            if self.sprite_tex.contains_key(&n) {
+                continue;
+            }
+            if loads == 0 {
+                self.sprites_pending = true;
+                break;
+            }
+            loads -= 1;
+            match self.mats.thumb(&n) {
+                Some((w, h, rgba)) => {
+                    let img = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], &rgba);
+                    let t = self.ctx.load_texture(format!("sprite:{n}"), img, egui::TextureOptions::LINEAR);
+                    self.sprite_tex.insert(n, Some(t));
+                }
+                None if self.mats.loading() => self.sprites_pending = true,
+                None => {
+                    self.sprite_tex.insert(n, None);
+                }
+            }
+        }
+        self.sprites_key = self.doc.version;
+        if self.sprites_pending {
+            self.ctx.request_repaint();
         }
     }
 
@@ -171,6 +210,7 @@ impl App {
             }
         }
         let mut point_boxes: Vec<(DVec3, DVec3, [f32; 4])> = vec![];
+        let mut sprite_cands: Vec<(String, DVec3, DVec3, [f32; 4])> = vec![];
         for e in &self.doc.map.entities {
             if self.doc.is_hidden(e.id) {
                 continue;
@@ -188,7 +228,12 @@ impl App {
                 }
                 let (a, b) = self.doc.ent_bounds(e, &self.fgd);
                 let c = ent_color(e, &self.fgd);
-                point_boxes.push((a, b, [c.r() as f32 / 255.0, c.g() as f32 / 255.0, c.b() as f32 / 255.0, 1.0]));
+                let col = [c.r() as f32 / 255.0, c.g() as f32 / 255.0, c.b() as f32 / 255.0, 1.0];
+                match crate::editor::doc::entity_sprite(e, &self.fgd) {
+                    // decided below: needs the material loaded (mutable access)
+                    Some(sp) => sprite_cands.push((sp, a, b, col)),
+                    None => point_boxes.push((a, b, col)),
+                }
             } else {
                 for s in &e.solids {
                     if let Some(g) = self.doc.geo.get(&s.id) {
@@ -247,6 +292,25 @@ impl App {
             }
         }
         self.inst = inst;
+        // entity icons: two crossed upright quads, textured with the sprite material
+        let mut sprites: Vec<(String, DVec3, f64)> = vec![];
+        for (sp, a, b, col) in sprite_cands {
+            if self.material_color(&sp).1.is_some() {
+                sprites.push((sp, (a + b) * 0.5, (b - a).max_element().max(16.0) * 0.5));
+            } else {
+                point_boxes.push((a, b, col)); // no texture: keep the plain cube
+            }
+        }
+        for (mat, c, r) in sprites {
+            let out = batches.entry(mat).or_default();
+            let (x, y, z) = (c.x as f32, c.y as f32, c.z as f32);
+            let r = r as f32;
+            for (dx, dy, n) in [(r, 0.0, [0.0, 1.0, 0.0]), (0.0, r, [1.0, 0.0, 0.0])] {
+                let v = |s: f32, up: f32, u: f32, vv: f32| Vertex { pos: [x + dx * s, y + dy * s, z + r * up], nrm: n, uv: [u, vv], col: [1.0; 4] };
+                let q = [v(-1.0, 1.0, 0.0, 0.0), v(1.0, 1.0, 1.0, 0.0), v(1.0, -1.0, 1.0, 1.0), v(-1.0, -1.0, 0.0, 1.0)];
+                out.extend([q[0], q[1], q[2], q[0], q[2], q[3]]);
+            }
+        }
         for (a, b, col) in point_boxes {
             let faces: [([usize; 4], [f32; 3]); 6] = [
                 ([0, 1, 3, 2], [-1.0, 0.0, 0.0]),

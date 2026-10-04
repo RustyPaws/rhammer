@@ -174,6 +174,10 @@ pub struct App {
     pub face_edit: FaceEdit,
     pub ctx: egui::Context,
     pub thumb_tex: std::collections::HashMap<String, egui::TextureHandle>,
+    /// Entity icon sprites by material name; `None` when the material has no usable texture.
+    pub sprite_tex: std::collections::HashMap<String, Option<egui::TextureHandle>>,
+    pub sprites_key: u64,
+    pub sprites_pending: bool,
     pub rot_mode: bool,
     pub paste_count: i32,
     pub show_entity_names: bool,
@@ -304,6 +308,9 @@ impl App {
             face_edit: FaceEdit::default(),
             ctx: cc.egui_ctx.clone(),
             thumb_tex: Default::default(),
+            sprite_tex: Default::default(),
+            sprites_key: u64::MAX,
+            sprites_pending: false,
             rot_mode: false,
             vtx: Default::default(),
             paste_count: 0,
@@ -363,6 +370,8 @@ impl App {
         self.fgd = fgd;
         self.mats = mats;
         self.thumb_tex.clear();
+        self.sprite_tex.clear();
+        self.sprites_key = u64::MAX;
         self.inst_cache.clear();
         self.models.clear();
         self.mv = Default::default();

@@ -83,6 +83,15 @@ pub fn entity_model(e: &Entity, fgd: &Fgd) -> Option<String> {
     Some(m.to_ascii_lowercase().replace('\\', "/"))
 }
 
+/// The material of the editor sprite an entity is drawn with: the FGD class' `iconsprite("...")`,
+/// normalized to a material name (no `materials/` prefix or `.vmt` extension).
+pub fn entity_sprite(e: &Entity, fgd: &Fgd) -> Option<String> {
+    let s = fgd.get(e.classname())?.sprite.as_deref()?.to_ascii_lowercase().replace('\\', "/");
+    let s = s.strip_prefix("materials/").unwrap_or(&s);
+    let s = s.strip_suffix(".vmt").unwrap_or(s);
+    (!s.is_empty()).then(|| s.to_string())
+}
+
 impl Doc {
     pub fn new(map: Map, path: Option<PathBuf>) -> Doc {
         let next_id = map.max_id();

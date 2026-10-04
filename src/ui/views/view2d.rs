@@ -245,6 +245,14 @@ impl App {
                     }
                     draw_solid(&mut shapes, &ig.polys, line, preview);
                     painter.rect_stroke(r, 0.0, Stroke::new(1.0, color.linear_multiply(0.6)), egui::StrokeKind::Inside);
+                } else if let Some(Some(tex)) = crate::editor::doc::entity_sprite(e, &self.fgd).and_then(|s| self.sprite_tex.get(&s)) {
+                    // icon sprite: at least 16px, keep the box outline for selection / hit feedback
+                    let side = r.width().max(r.height()).max(16.0);
+                    let ir = Rect::from_center_size(r.center(), Vec2::splat(side));
+                    painter.image(tex.id(), ir, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
+                    if selected {
+                        painter.rect_stroke(ir, 0.0, Stroke::new(1.0, color), egui::StrokeKind::Inside);
+                    }
                 } else {
                     painter.rect_filled(r, 0.0, color.linear_multiply(0.35));
                     painter.rect_stroke(r, 0.0, Stroke::new(1.0, color), egui::StrokeKind::Inside);
