@@ -3,7 +3,7 @@
 
 use std::collections::{BTreeSet, HashMap, VecDeque};
 
-use eframe::egui::{self, Color32, Pos2, RichText};
+use eframe::egui::{self, emath::TSTransform, Color32, Pos2, RichText, Vec2};
 use egui_snarl::ui::{PinInfo, SnarlViewer, SnarlWidget};
 use egui_snarl::{InPin, InPinId, NodeId, OutPin, OutPinId, Snarl};
 
@@ -49,11 +49,14 @@ pub struct IoGraph {
     built_for: Option<(u64, u64, Scope)>,
     positions: HashMap<u32, Pos2>,
     wire_notes: HashMap<(OutPinId, InPinId), String>,
+    /// Screen position of the graph area last frame. egui-snarl keeps its view transform in
+    /// screen space, so when the window moves the transform has to move with it.
+    origin: Option<Pos2>,
 }
 
 impl Default for IoGraph {
     fn default() -> Self {
-        IoGraph { scope: Scope::Selection, snarl: Snarl::new(), built_for: None, positions: HashMap::new(), wire_notes: HashMap::new() }
+        IoGraph { scope: Scope::Selection, snarl: Snarl::new(), built_for: None, positions: HashMap::new(), wire_notes: HashMap::new(), origin: None }
     }
 }
 
@@ -426,8 +429,12 @@ impl IoGraph {
             });
         }
 
+        let origin = ui.available_rect_before_wrap().min;
+        let shift = self.origin.map_or(Vec2::ZERO, |o| origin - o);
+        self.origin = Some(origin);
+
         let mut picked = None;
-        let mut viewer = Viewer { sel, picked: &mut picked, notes: &self.wire_notes };
+        let mut viewer = Viewer { sel, picked: &mut picked, notes: &self.wire_notes, shift };
         SnarlWidget::new().id_salt("io_graph").show(&mut self.snarl, &mut viewer, ui);
 
         for (pos, node) in self.snarl.nodes_pos() {
@@ -443,6 +450,8 @@ struct Viewer<'a> {
     sel: &'a BTreeSet<u32>,
     picked: &'a mut Option<u32>,
     notes: &'a HashMap<(OutPinId, InPinId), String>,
+    /// How far the graph area moved on screen since last frame.
+    shift: Vec2,
 }
 
 impl SnarlViewer<IoNode> for Viewer<'_> {
@@ -492,6 +501,10 @@ impl SnarlViewer<IoNode> for Viewer<'_> {
         if let Some(n) = self.notes.get(&(from.id, to.id)) {
             ui.label(RichText::new(n).small());
         }
+    }
+
+    fn current_transform(&mut self, to_global: &mut TSTransform, _snarl: &mut Snarl<IoNode>) {
+        to_global.translation += self.shift;
     }
 
     // read-only graph: ignore edits
@@ -571,5 +584,40 @@ mod tests {
         g.rebuild(&map, &BTreeSet::new());
         assert_eq!(g.snarl.node_ids().count(), 4); // btn, relay, door_a, ghost
         assert_eq!(g.snarl.wires().count(), 3);
+    }
+
+    /// Screen position of the first text shape containing `needle`.
+    fn text_pos(out: &egui::FullOutput, needle: &str) -> Option<Pos2> {
+        out.shapes.iter().find_map(|c| match &c.shape {
+            egui::Shape::Text(t) if t.galley.job.text.contains(needle) => Some(t.pos),
+            _ => None,
+        })
+    }
+
+    #[test]
+    fn nodes_follow_the_window() {
+        let map = Map { entities: vec![ent(1, "btn", &[("OnPressed", "relay,Trigger,,0,-1")]), ent(2, "relay", &[])], ..Default::default() };
+        let mut g = IoGraph { scope: Scope::Map, ..Default::default() };
+        let ctx = egui::Context::default();
+        let mut frame = |at: Pos2| {
+            let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(Pos2::ZERO, egui::vec2(1600.0, 1200.0))), ..Default::default() };
+            let mut out = ctx.run_ui(input, |ui| {
+                egui::Area::new(egui::Id::new("graph")).fixed_pos(at).show(ui.ctx(), |ui| {
+                    ui.set_min_size(egui::vec2(600.0, 400.0));
+                    ui.set_max_size(egui::vec2(600.0, 400.0));
+                    g.show(ui, &map, 1, &BTreeSet::new(), 0);
+                });
+            });
+            out.textures_delta.clear();
+            out
+        };
+        for _ in 0..3 {
+            frame(Pos2::new(100.0, 100.0));
+        }
+        let before = text_pos(&frame(Pos2::new(100.0, 100.0)), "btn").expect("node drawn");
+        frame(Pos2::new(400.0, 300.0));
+        let after = text_pos(&frame(Pos2::new(400.0, 300.0)), "btn").expect("node drawn");
+        let moved = after - before;
+        assert!((moved - egui::vec2(300.0, 200.0)).length() < 1.0, "node moved by {moved:?}");
     }
 }
