@@ -11,53 +11,77 @@ pub(crate) fn parse_color255(s: &str) -> ([u8; 3], i32) {
     ([g(0, 255).clamp(0, 255) as u8, g(1, 255).clamp(0, 255) as u8, g(2, 255).clamp(0, 255) as u8], g(3, 200))
 }
 
-/// A combo box whose popup has a filter field above a scrolled list of `items`. Returns the
-/// item clicked this frame. The caller keeps `filter`, so it survives closing the popup.
+/// A combo-style button whose popup has a filter field above a scrolled list of `items`. Returns
+/// the item clicked this frame. The caller keeps `filter`, so it survives closing the popup.
+///
+/// egui lays a popup out inside the size it had last frame, so it can shrink but never grow back.
+/// The popup id therefore includes the number of visible rows: a new height is a fresh popup that
+/// gets measured from scratch.
 pub(crate) fn filter_combo<'a>(ui: &mut egui::Ui, id_salt: &str, selected: &str, width: Option<f32>, filter: &mut String, items: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    const MAX_HEIGHT: f32 = 360.0;
     let mut picked = None;
-    let mut combo = egui::ComboBox::from_id_salt(id_salt).selected_text(selected).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    let all: Vec<&str> = items.into_iter().collect();
+    let btn_id = ui.make_persistent_id(id_salt);
+    let (open_id, focus_id) = (btn_id.with("open"), btn_id.with("filter"));
+    let mut open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+
+    let mut button = egui::Button::new(format!("{selected}  ▾")).wrap_mode(egui::TextWrapMode::Truncate);
     if let Some(w) = width {
-        combo = combo.width(w);
+        button = button.min_size(egui::vec2(w, 0.0));
     }
-    // The popup body only runs while open, so a missing flag means this is the opening frame.
-    let init_id = ui.make_persistent_id(id_salt).with("filter_focused");
-    let out = combo.show_ui(ui, |ui| {
-        let edit = ui.add(egui::TextEdit::singleline(filter).hint_text("filter…"));
-        if !ui.data(|d| d.get_temp::<bool>(init_id).unwrap_or(false)) {
-            edit.request_focus();
-            ui.data_mut(|d| d.insert_temp(init_id, true));
-        }
-        let f = filter.to_ascii_lowercase();
-        let enter = edit.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        // Keyed on the match count so the scroll area re-measures when the list grows.
-        let matched: Vec<&str> = items.into_iter().filter(|n| name_matches(&f, n)).collect();
-        if enter {
-            if let Some(n) = matched.first() {
-                picked = Some(n.to_string());
-                ui.close();
-            }
-        }
-        // Size the list from the match count instead of last frame's content, which egui reuses
-        // and which kept the popup stuck at its smallest height.
+    let resp = ui.add(button);
+    if resp.clicked() {
+        open = !open;
+    }
+
+    if open {
         let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
-        let h = (matched.len() as f32 * row).clamp(row, 360.0);
-        let count_id = init_id.with("count");
-        if ui.data(|d| d.get_temp::<usize>(count_id)) != Some(matched.len()) {
-            ui.data_mut(|d| d.insert_temp(count_id, matched.len()));
-            ui.ctx().request_repaint();
-        }
-        egui::ScrollArea::vertical().id_salt(matched.len()).min_scrolled_height(h).max_height(h).auto_shrink([false, false]).show(ui, |ui| {
-            for n in &matched {
-                if ui.selectable_label(*n == selected, *n).clicked() {
-                    picked = Some(n.to_string());
-                    ui.close();
+        let max_rows = (MAX_HEIGHT / row) as usize;
+        let rows = {
+            let f = filter.to_ascii_lowercase();
+            all.iter().filter(|n| name_matches(&f, n)).count().clamp(1, max_rows)
+        };
+        let popup_id = btn_id.with(("popup", rows));
+        egui::Popup::from_response(&resp)
+            .id(popup_id)
+            .open_bool(&mut open)
+            .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+            .width(resp.rect.width())
+            .show(|ui| {
+                let edit = ui.add(egui::TextEdit::singleline(filter).id(focus_id).hint_text("filter…"));
+                if edit.changed() {
+                    ui.ctx().request_repaint();
                 }
-            }
-        });
-    });
-    if out.inner.is_none() {
-        ui.data_mut(|d| d.remove_temp::<bool>(init_id));
+                // Focus once per opening, but not during egui's invisible sizing pass.
+                if ui.is_visible() && !ui.data(|d| d.get_temp::<bool>(open_id.with("focused")).unwrap_or(false)) {
+                    edit.request_focus();
+                    ui.data_mut(|d| d.insert_temp(open_id.with("focused"), true));
+                }
+                let f = filter.to_ascii_lowercase();
+                let matched: Vec<&str> = all.iter().copied().filter(|n| name_matches(&f, n)).collect();
+                if edit.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if let Some(n) = matched.first() {
+                        picked = Some(n.to_string());
+                        ui.close();
+                    }
+                }
+                egui::ScrollArea::vertical().max_height(MAX_HEIGHT).auto_shrink([false, true]).show(ui, |ui| {
+                    for n in &matched {
+                        if ui.selectable_label(*n == selected, *n).clicked() {
+                            picked = Some(n.to_string());
+                            ui.close();
+                        }
+                    }
+                });
+            });
     }
+    if picked.is_some() {
+        open = false;
+    }
+    if !open {
+        ui.data_mut(|d| d.remove_temp::<bool>(open_id.with("focused")));
+    }
+    ui.data_mut(|d| d.insert_temp(open_id, open));
     picked
 }
 
