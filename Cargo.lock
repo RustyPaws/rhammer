@@ -2639,7 +2639,7 @@ dependencies = [
 
 [[package]]
 name = "rhammer"
-version = "0.4.1"
+version = "0.4.2"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
