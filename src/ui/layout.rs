@@ -48,7 +48,7 @@ impl Default for UiLayout {
         let tree = dock.main_surface_mut();
         // for left / above splits the fraction is the share of the new node
         let [views, _] = tree.split_right(NodeIndex::root(), 0.78, vec![Pane::Object, Pane::Textures, Pane::VisGroups]);
-        let [views, _] = tree.split_left(views, 0.12, vec![Pane::Tools]);
+        let [views, _] = tree.split_left(views, 0.04, vec![Pane::Tools]);
         tree.split_above(views, 0.1, vec![Pane::Options]);
         UiLayout { dock, view_kinds: [0, 1, 2, 3], grid_split: [0.5, 0.5] }
     }

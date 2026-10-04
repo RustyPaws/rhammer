@@ -57,9 +57,9 @@ impl Tool {
     }
 }
 
-/// Bounds for the side of a (square) tool button, in points.
-const BUTTON_MIN: f32 = 20.0;
-const BUTTON_MAX: f32 = 96.0;
+/// Side of a (square) tool button and of the icon inside it, in points.
+const BUTTON: f32 = 32.0;
+const ICON: f32 = 20.0;
 
 impl App {
     /// Switches tools; the texture tool also brings the Textures pane forward.
@@ -70,24 +70,17 @@ impl App {
         }
     }
 
-    /// Square icon buttons laid out along the pane's long axis and stretched to fill its short one:
-    /// a tall pane gets a column of pane-wide buttons, a wide pane a row of pane-high ones.
+    /// Small square icon buttons that wrap to fit the pane: a narrow pane gets a column,
+    /// a wide one a row (or a grid when neither fits).
     pub fn tools_pane(&mut self, ui: &mut egui::Ui) {
-        let avail = ui.available_size();
-        let column = avail.y >= avail.x;
-        let side = if column { avail.x } else { avail.y }.clamp(BUTTON_MIN, BUTTON_MAX).floor();
-        let pad = ui.spacing().button_padding;
-        let icon = (side - 2.0 * pad.x.max(pad.y)).max(8.0);
-        let layout = if column { egui::Layout::top_down(egui::Align::Min) } else { egui::Layout::left_to_right(egui::Align::Min) };
-        let scroll = if column { egui::ScrollArea::vertical() } else { egui::ScrollArea::horizontal() };
-        scroll.auto_shrink([false, false]).show(ui, |ui| {
-            ui.with_layout(layout, |ui| {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
                 for t in Tool::ALL {
                     let active = self.tool == t;
                     let tint = if active { ui.visuals().selection.stroke.color } else { ui.visuals().widgets.inactive.fg_stroke.color };
-                    let img = egui::Image::new(t.icon()).fit_to_exact_size(egui::vec2(icon, icon)).tint(tint);
+                    let img = egui::Image::new(t.icon()).fit_to_exact_size(egui::vec2(ICON, ICON)).tint(tint);
                     let button = egui::Button::image(img).selected(active);
-                    if ui.add_sized([side, side], button).on_hover_text(t.tooltip()).clicked() {
+                    if ui.add_sized([BUTTON, BUTTON], button).on_hover_text(t.tooltip()).clicked() {
                         self.set_tool(t);
                     }
                 }
