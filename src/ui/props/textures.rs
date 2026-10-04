@@ -47,6 +47,60 @@ impl App {
         self.for_each_face(|sd| sd.material = m.clone());
     }
 
+    /// Copy the material of the selected face onto `target` (falls back to the current
+    /// material when nothing else is selected), leaving the face selection untouched.
+    /// With `wrap`, the texture mapping of the first selected face is carried over the
+    /// shared edge so the texture continues seamlessly (walls line up).
+    pub fn paint_face(&mut self, target: u32, wrap: bool) {
+        let src = self.faces.iter().find(|f| **f != target).copied();
+        let src_side = src.and_then(|id| {
+            self.doc.map.world.solids.iter().chain(self.doc.map.entities.iter().flat_map(|e| e.solids.iter()))
+                .flat_map(|s| s.sides.iter()).find(|s| s.id == id).cloned()
+        });
+        self.doc.checkpoint();
+        let m = self.cur_mat.clone();
+        for s in self.doc.map.world.solids.iter_mut().chain(self.doc.map.entities.iter_mut().flat_map(|e| e.solids.iter_mut())) {
+            for sd in &mut s.sides {
+                if sd.id != target {
+                    continue;
+                }
+                let Some(ss) = &src_side else {
+                    sd.material = m.clone();
+                    continue;
+                };
+                sd.material = ss.material.clone();
+                if !wrap {
+                    continue;
+                }
+                let (Some(ps), Some(pt)) = (geom::Plane::from_points(&ss.plane), geom::Plane::from_points(&sd.plane)) else { continue };
+                // rotate the source axes about the shared edge into the target plane
+                let axis = ps.n.cross(pt.n);
+                let (rot, p0) = if axis.length() < 1e-6 {
+                    (glam::DQuat::IDENTITY, pt.n * pt.d)
+                } else {
+                    let a = axis.normalize();
+                    let ang = ps.n.dot(pt.n).clamp(-1.0, 1.0).acos();
+                    // point on both planes
+                    let denom = 1.0 - ps.n.dot(pt.n).powi(2);
+                    let c1 = (ps.d - pt.d * ps.n.dot(pt.n)) / denom;
+                    let c2 = (pt.d - ps.d * ps.n.dot(pt.n)) / denom;
+                    (glam::DQuat::from_axis_angle(a, ang), ps.n * c1 + pt.n * c2)
+                };
+                let mut u = ss.uaxis.clone();
+                let mut v = ss.vaxis.clone();
+                u.vec = rot * u.vec;
+                v.vec = rot * v.vec;
+                // keep the mapping continuous at the shared edge point p0
+                u.shift = ss.uaxis.shift + p0.dot(ss.uaxis.vec) / ss.uaxis.scale - p0.dot(u.vec) / u.scale;
+                v.shift = ss.vaxis.shift + p0.dot(ss.vaxis.vec) / ss.vaxis.scale - p0.dot(v.vec) / v.scale;
+                sd.uaxis = u;
+                sd.vaxis = v;
+                sd.rotation = ss.rotation;
+            }
+        }
+        self.doc.touch();
+    }
+
     pub fn apply_material_to_selection(&mut self) {
         if self.sel.is_empty() {
             return;

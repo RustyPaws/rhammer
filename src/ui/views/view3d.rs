@@ -259,13 +259,8 @@ impl App {
             if let Some(p) = resp.interact_pointer_pos() {
                 let (o, d) = ray_at(self, p);
                 if let Some((_, Some(side), _)) = self.pick_3d(o, d) {
-                    let mut f = self.faces.clone();
-                    if !f.contains(&side) {
-                        f.clear();
-                        f.insert(side);
-                    }
-                    self.faces = f;
-                    self.apply_material_to_faces();
+                    let alt = ui.input(|i| i.modifiers.alt);
+                    self.paint_face(side, alt);
                 }
             }
         }
