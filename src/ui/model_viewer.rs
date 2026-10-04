@@ -399,7 +399,7 @@ impl App {
         }
         if resp.hovered() {
             let sc = ui.input(|i| i.smooth_scroll_delta.y);
-            mv.zoom = (mv.zoom * (1.0 - sc * 0.002)).clamp(0.05, 20.0);
+            mv.zoom = (mv.zoom * (1.0 - sc * 0.002)).clamp(0.12, 20.0);
         }
         let painter = painter.with_clip_rect(resp.rect.intersect(ui.clip_rect()));
 
@@ -420,7 +420,7 @@ impl App {
         let center = base + mv.pan;
         let eye = center + dist * Vec3::new(mv.pitch.cos() * mv.yaw.cos(), mv.pitch.cos() * mv.yaw.sin(), mv.pitch.sin());
         let aspect = resp.rect.width() / resp.rect.height().max(1.0);
-        let vp = Mat4::perspective_rh_gl(0.9, aspect, (dist * 0.02).max(0.1), dist * 10.0) * Mat4::look_at_rh(eye, center, Vec3::Z);
+        let vp = Mat4::perspective_rh_gl(0.9, aspect, (dist * 0.002).max(0.001), dist * 100.0 + radius * 4.0) * Mat4::look_at_rh(eye, center, Vec3::Z);
         let cam = Cam { vp, rect: resp.rect };
 
         let frame = model.sequences.get(mv.seq).map(|s| s.frame_at(mv.time)).unwrap_or(0.0);
