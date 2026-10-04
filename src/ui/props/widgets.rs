@@ -37,7 +37,16 @@ pub(crate) fn filter_combo<'a>(ui: &mut egui::Ui, id_salt: &str, selected: &str,
                 ui.close();
             }
         }
-        egui::ScrollArea::vertical().id_salt(matched.len()).max_height(360.0).auto_shrink([false, true]).show(ui, |ui| {
+        // Size the list from the match count instead of last frame's content, which egui reuses
+        // and which kept the popup stuck at its smallest height.
+        let row = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+        let h = (matched.len() as f32 * row).clamp(row, 360.0);
+        let count_id = init_id.with("count");
+        if ui.data(|d| d.get_temp::<usize>(count_id)) != Some(matched.len()) {
+            ui.data_mut(|d| d.insert_temp(count_id, matched.len()));
+            ui.ctx().request_repaint();
+        }
+        egui::ScrollArea::vertical().id_salt(matched.len()).min_scrolled_height(h).max_height(h).auto_shrink([false, false]).show(ui, |ui| {
             for n in &matched {
                 if ui.selectable_label(*n == selected, *n).clicked() {
                     picked = Some(n.to_string());
