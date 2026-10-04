@@ -1104,25 +1104,11 @@ impl App {
     }
 
     pub fn entity_class_picker(&mut self, ui: &mut egui::Ui) {
-        let cur = self.ent_class.clone();
-        egui::ComboBox::from_id_salt("entclass").selected_text(cur).width((ui.available_width() - 8.0).clamp(60.0, 220.0)).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
-            ui.add(egui::TextEdit::singleline(&mut self.ent_filter).hint_text("filter..."));
-            let f = self.ent_filter.to_ascii_lowercase();
-            egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                let names: Vec<String> = self
-                    .fgd
-                    .point_classes()
-                    .map(|c| c.name.clone())
-                    .filter(|n| f.is_empty() || n.to_ascii_lowercase().contains(&f))
-                    .collect();
-                for n in names {
-                    if ui.selectable_label(self.ent_class == n, &n).clicked() {
-                        self.ent_class = n;
-                        ui.close();
-                    }
-                }
-            });
-        });
+        let w = (ui.available_width() - 8.0).clamp(60.0, 220.0);
+        let classes = self.fgd.point_classes().map(|c| c.name.as_str());
+        if let Some(n) = crate::ui::props::widgets::filter_combo(ui, "entclass", &self.ent_class, Some(w), &mut self.ent_filter, classes) {
+            self.ent_class = n;
+        }
     }
 
     fn status_bar(&mut self, ui: &mut egui::Ui) {

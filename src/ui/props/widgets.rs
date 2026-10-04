@@ -11,6 +11,29 @@ pub(crate) fn parse_color255(s: &str) -> ([u8; 3], i32) {
     ([g(0, 255).clamp(0, 255) as u8, g(1, 255).clamp(0, 255) as u8, g(2, 255).clamp(0, 255) as u8], g(3, 200))
 }
 
+/// A combo box whose popup has a filter field above a scrolled list of `items`. Returns the
+/// item clicked this frame. The caller keeps `filter`, so it survives closing the popup.
+pub(crate) fn filter_combo<'a>(ui: &mut egui::Ui, id_salt: &str, selected: &str, width: Option<f32>, filter: &mut String, items: impl IntoIterator<Item = &'a str>) -> Option<String> {
+    let mut picked = None;
+    let mut combo = egui::ComboBox::from_id_salt(id_salt).selected_text(selected).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside);
+    if let Some(w) = width {
+        combo = combo.width(w);
+    }
+    combo.show_ui(ui, |ui| {
+        ui.add(egui::TextEdit::singleline(filter).hint_text("filter…"));
+        let f = filter.to_ascii_lowercase();
+        egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
+            for n in items.into_iter().filter(|n| f.is_empty() || n.to_ascii_lowercase().contains(&f)) {
+                if ui.selectable_label(n == selected, n).clicked() {
+                    picked = Some(n.to_string());
+                    ui.close();
+                }
+            }
+        });
+    });
+    picked
+}
+
 /// Returns true when the value changed.
 pub(crate) fn prop_editor(ui: &mut egui::Ui, prop: &Prop, value: &mut String, targets: &[String]) -> bool {
     let mut changed = false;

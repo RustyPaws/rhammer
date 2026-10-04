@@ -9,7 +9,7 @@ mod angles;
 mod entity;
 mod textures;
 mod visgroups;
-mod widgets;
+pub(crate) mod widgets;
 
 /// Scrolls both ways. Widgets still size themselves to the visible width, and whatever can't
 /// shrink any further stays reachable through the horizontal scrollbar.
@@ -53,20 +53,8 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     ui.label("Tie to entity:");
                     let cur = self.default_solid_class();
-                    let mut chosen: Option<String> = None;
-                    egui::ComboBox::from_id_salt("tiecls").selected_text(cur.clone()).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
-                        ui.add(egui::TextEdit::singleline(&mut self.ent_filter).hint_text("filter…"));
-                        let f = self.ent_filter.to_ascii_lowercase();
-                        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                            for c in self.fgd.solid_classes() {
-                                if (f.is_empty() || c.name.to_ascii_lowercase().contains(&f)) && ui.selectable_label(false, &c.name).clicked() {
-                                    chosen = Some(c.name.clone());
-                                    ui.close();
-                                }
-                            }
-                        });
-                    });
-                    if let Some(c) = chosen {
+                    let classes = self.fgd.solid_classes().map(|c| c.name.as_str());
+                    if let Some(c) = widgets::filter_combo(ui, "tiecls", &cur, None, &mut self.ent_filter, classes) {
                         self.tie_selection(&c);
                     }
                 });

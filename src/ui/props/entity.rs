@@ -5,7 +5,7 @@ use crate::formats::fgd::ClassKind;
 use crate::formats::vmf::{self, Entity};
 use eframe::egui::{self, Color32, RichText};
 use super::*;
-use super::widgets::prop_editor;
+use super::widgets::{filter_combo, prop_editor};
 
 pub(crate) enum Edit {
     Set(String, String),
@@ -26,26 +26,13 @@ impl App {
             ui.horizontal(|ui| {
                 ui.label("Class");
                 let solid = !e.solids.is_empty();
-                egui::ComboBox::from_id_salt("objclass").selected_text(class_name.clone()).width(ui.available_width() - 8.0).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.ent_filter).hint_text("filter…"));
-                    let f = self.ent_filter.to_ascii_lowercase();
-                    egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
-                        let list: Vec<String> = self
-                            .fgd
-                            .names
-                            .iter()
-                            .filter(|n| self.fgd.get(n).map(|c| if solid { c.kind == ClassKind::Solid } else { c.kind != ClassKind::Solid }).unwrap_or(false))
-                            .filter(|n| f.is_empty() || n.to_ascii_lowercase().contains(&f))
-                            .cloned()
-                            .collect();
-                        for n in list {
-                            if ui.selectable_label(n == class_name, &n).clicked() {
-                                edits.push(Edit::Set("classname".into(), n));
-                                ui.close();
-                            }
-                        }
-                    });
-                });
+                // brush entities can only become other brush entities, point entities other point ones
+                let fgd = &self.fgd;
+                let classes = fgd.names.iter().map(String::as_str).filter(|n| fgd.get(n).is_some_and(|c| (c.kind == ClassKind::Solid) == solid));
+                let w = ui.available_width() - 8.0;
+                if let Some(n) = filter_combo(ui, "objclass", &class_name, Some(w), &mut self.ent_filter, classes) {
+                    edits.push(Edit::Set("classname".into(), n));
+                }
             });
             if let Some(c) = &class {
                 if !c.desc.is_empty() {
