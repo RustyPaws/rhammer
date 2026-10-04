@@ -78,8 +78,18 @@ pub struct Windows {
 #[derive(Clone)]
 pub enum PendingAction {
     New,
+    Close,
     Open(Option<PathBuf>),
     Quit,
+}
+
+/// Marker file that exists while the editor runs; finding it at startup means the last run crashed.
+#[cfg(feature = "local")]
+const SESSION_MARKER: &str = "rhammer.session";
+
+#[cfg(feature = "local")]
+fn clear_session_marker() {
+    let _ = std::fs::remove_file(SESSION_MARKER);
 }
 
 pub struct TransformDlg {
@@ -330,7 +340,11 @@ impl App {
         #[cfg(feature = "local")]
         {
             let arg = std::env::args().nth(1).map(PathBuf::from);
-            let last = (!app.settings.last_map.is_empty()).then(|| PathBuf::from(&app.settings.last_map));
+            // the last map is reopened only after a crash (marker left behind) or when the option is on
+            let crashed = Path::new(SESSION_MARKER).exists();
+            let _ = std::fs::write(SESSION_MARKER, "");
+            let restore = crashed || app.settings.editor.restore_last_map;
+            let last = (restore && !app.settings.last_map.is_empty()).then(|| PathBuf::from(&app.settings.last_map));
             if let Some(p) = arg.or(last) {
                 if p.exists() {
                     app.open_path(&p);
@@ -697,10 +711,18 @@ impl App {
     pub fn perform(&mut self, a: PendingAction) {
         match a {
             PendingAction::New => self.new_map(),
+            PendingAction::Close => {
+                self.new_map();
+                self.settings.last_map.clear();
+                self.settings.save();
+                self.status = "Map closed".into();
+            }
             PendingAction::Open(Some(p)) => self.open_path(&p),
             PendingAction::Open(None) => self.open_dialog(),
             PendingAction::Quit => {
                 self.settings.save();
+                #[cfg(feature = "local")]
+                clear_session_marker();
                 self.win.quit_confirm = true;
                 self.ctx.send_viewport_cmd(egui::ViewportCommand::Close);
             }
@@ -972,6 +994,9 @@ impl App {
             }
             if pressed(Key::N) {
                 self.request(PendingAction::New);
+            }
+            if pressed(Key::Q) {
+                self.request(PendingAction::Quit);
             }
             if pressed(Key::D) {
                 self.duplicate_selection();
@@ -1308,9 +1333,14 @@ impl eframe::App for App {
         let ctx = ui.ctx().clone();
         ctx.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
 
-        if ctx.input(|i| i.viewport().close_requested()) && self.doc.dirty && !self.win.quit_confirm {
-            ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
-            self.win.pending_action = Some(PendingAction::Quit);
+        if ctx.input(|i| i.viewport().close_requested()) {
+            if self.doc.dirty && !self.win.quit_confirm {
+                ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
+                self.win.pending_action = Some(PendingAction::Quit);
+            } else {
+                #[cfg(feature = "local")]
+                clear_session_marker();
+            }
         }
         #[cfg(feature = "web")]
         self.web_poll(&ctx);

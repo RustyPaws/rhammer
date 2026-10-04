@@ -15,6 +15,8 @@ use std::path::PathBuf;
 pub struct EditorOptions {
     /// Steam folder (the one containing `steamapps`). When set it is used instead of the default search locations.
     pub steam_dir: Option<String>,
+    /// Reopen the last map on every start, not only after a crash.
+    pub restore_last_map: bool,
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

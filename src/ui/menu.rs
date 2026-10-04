@@ -15,6 +15,10 @@ impl App {
                     self.request(PendingAction::New);
                     ui.close();
                 }
+                if ui.button("Close").clicked() {
+                    self.request(PendingAction::Close);
+                    ui.close();
+                }
                 let io_ok = Self::file_io_ok();
                 const NEEDS_CHROMIUM: &str = "Needs a Chromium browser (Chrome, Edge)";
                 if ui.add_enabled(io_ok, egui::Button::new("Open...        Ctrl+O")).on_disabled_hover_text(NEEDS_CHROMIUM).clicked() {
@@ -48,7 +52,7 @@ impl App {
                     }
                 }
                 ui.separator();
-                if ui.button("Exit").clicked() {
+                if ui.button("Exit         Ctrl+Q").clicked() {
                     self.request(PendingAction::Quit);
                     ui.close();
                 }

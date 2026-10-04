@@ -115,6 +115,8 @@ impl App {
                 "Forces this Steam folder when resolving |appid_<id>| search paths.                  Leave empty to search the default Steam locations.",
             );
             ui.separator();
+            ui.checkbox(&mut self.settings.editor.restore_last_map, "Reopen the last map on startup (otherwise only after a crash)");
+            ui.separator();
             ui.horizontal(|ui| {
                 if ui.button("OK / Apply").clicked() {
                     apply = true;
