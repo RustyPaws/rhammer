@@ -101,6 +101,7 @@ impl App {
         // ---- camera control ----
         let rmb = ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
         let looking = resp.dragged_by(egui::PointerButton::Secondary) || (rmb && hovered);
+        self.view_busy |= looking || resp.dragged();
         if looking {
             let d = ui.input(|i| i.pointer.delta());
             self.cam.yaw -= d.x as f64 * 0.25;

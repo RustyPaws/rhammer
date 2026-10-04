@@ -550,8 +550,22 @@ impl App {
         if !self.win.object_props {
             return;
         }
+        // fades while something is dragged in a view, so the view under it stays visible
+        // (the view holds the pointer for the whole drag, so the window can't steal it)
+        let t = ctx.animate_bool_with_time(egui::Id::new("object_props_fade"), self.view_busy, 0.15);
+        let alpha = egui::lerp(1.0..=0.25, t);
+        let style = ctx.global_style();
+        let title = RichText::new("Object Properties").color(style.visuals.text_color().gamma_multiply(alpha));
         let mut open = true;
-        egui::Window::new("Object Properties").open(&mut open).default_size([380.0, 540.0]).show(ctx, |ui| self.object_props_ui(ui));
+        egui::Window::new(title)
+            .id(egui::Id::new("object_props"))
+            .frame(egui::Frame::window(&style).multiply_with_opacity(alpha))
+            .open(&mut open)
+            .default_size([380.0, 540.0])
+            .show(ctx, |ui| {
+                ui.multiply_opacity(alpha);
+                self.object_props_ui(ui);
+            });
         if !open {
             self.win.object_props = false;
         }

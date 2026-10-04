@@ -150,6 +150,8 @@ pub struct App {
     /// Draft of `settings.editor.steam_dir` while the Editor options window is open.
     pub steam_edit: String,
     pub hover_world: Option<DVec3>,
+    /// Something is being dragged in a viewport this frame (moving, drawing, panning, looking).
+    pub view_busy: bool,
     pub new_visgroup: String,
     pub find_text: String,
     pub io_graph: crate::ui::io_graph::IoGraph,
@@ -280,6 +282,7 @@ impl App {
             cfg_sel: 0,
             steam_edit: String::new(),
             hover_world: None,
+            view_busy: false,
             new_visgroup: String::new(),
             find_text: String::new(),
             io_graph: Default::default(),

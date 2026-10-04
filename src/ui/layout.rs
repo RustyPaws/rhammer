@@ -209,6 +209,7 @@ impl App {
     /// The central area: the dock, or a single maximized view.
     pub fn central_ui(&mut self, ui: &mut egui::Ui) {
         self.hover_world = None;
+        self.view_busy = false;
         self.prepare_scene();
         if let Some(kind) = self.maximized {
             let full = ui.available_rect_before_wrap();

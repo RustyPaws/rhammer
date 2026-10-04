@@ -86,6 +86,7 @@ impl App {
     pub(crate) fn view2d_ui(&mut self, ui: &mut egui::Ui, rect: Rect, vi: usize) {
         let id = ui.id().with(("view2d", vi));
         let resp = ui.interact(rect, id, Sense::click_and_drag());
+        self.view_busy |= resp.dragged();
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, Color32::from_rgb(16, 16, 20));
         let (ua, va, wa) = axes(vi);
