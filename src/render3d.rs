@@ -106,7 +106,18 @@ layout(location=2) in vec2 uv;
 layout(location=3) in vec4 col;
 uniform mat4 mvp;
 out vec3 vn; out vec2 vuv; out vec4 vcol;
-void main(){ gl_Position = mvp*vec4(pos,1.0); vn=nrm; vuv=uv; vcol=col; }
+void main(){
+  vec3 p = pos;
+  vec4 c = col;
+  // entity icons: col.a < 0 marks a camera-facing sprite corner (pos = center, nrm = (corner xy, radius))
+  if(col.a < 0.0){
+    vec3 right = normalize(vec3(mvp[0][0], mvp[1][0], mvp[2][0]));
+    vec3 up = normalize(vec3(mvp[0][1], mvp[1][1], mvp[2][1]));
+    p += (right*nrm.x + up*nrm.y) * nrm.z;
+    c.a = -col.a;
+  }
+  gl_Position = mvp*vec4(p,1.0); vn=nrm; vuv=uv; vcol=c;
+}
 "#;
 
 const FS: &str = r#"

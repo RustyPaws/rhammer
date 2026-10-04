@@ -84,7 +84,8 @@ impl Materials {
         let Some(bytes) = self.fs.read(&format!("materials/{}.vmt", mat.to_ascii_lowercase())) else { return 0 };
         let Ok(nodes) = kv::parse(&String::from_utf8_lossy(&bytes)) else { return 0 };
         let on = |k: &str| find_key(&nodes, k).map_or(false, |v| v.trim().trim_matches('"') != "0" && !v.trim().is_empty());
-        if on("$translucent") {
+        // sprite shaders blend by the texture alpha
+        if nodes.first().map_or(false, |n| n.key.to_ascii_lowercase().starts_with("sprite")) || on("$translucent") {
             return 2;
         }
         if on("$alphatest") {

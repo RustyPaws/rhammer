@@ -303,13 +303,11 @@ impl App {
         }
         for (mat, c, r) in sprites {
             let out = batches.entry(mat).or_default();
-            let (x, y, z) = (c.x as f32, c.y as f32, c.z as f32);
-            let r = r as f32;
-            for (dx, dy, n) in [(r, 0.0, [0.0, 1.0, 0.0]), (0.0, r, [1.0, 0.0, 0.0])] {
-                let v = |s: f32, up: f32, u: f32, vv: f32| Vertex { pos: [x + dx * s, y + dy * s, z + r * up], nrm: n, uv: [u, vv], col: [1.0; 4] };
-                let q = [v(-1.0, 1.0, 0.0, 0.0), v(1.0, 1.0, 1.0, 0.0), v(1.0, -1.0, 1.0, 1.0), v(-1.0, -1.0, 0.0, 1.0)];
-                out.extend([q[0], q[1], q[2], q[0], q[2], q[3]]);
-            }
+            let pos = [c.x as f32, c.y as f32, c.z as f32];
+            // a negative alpha makes the vertex shader expand the corner (nrm.xy * nrm.z) along the camera axes
+            let v = |cx: f32, cy: f32| Vertex { pos, nrm: [cx, cy, r as f32], uv: [(cx + 1.0) * 0.5, (1.0 - cy) * 0.5], col: [1.0, 1.0, 1.0, -1.0] };
+            let q = [v(-1.0, -1.0), v(1.0, -1.0), v(1.0, 1.0), v(-1.0, 1.0)];
+            out.extend([q[0], q[1], q[2], q[0], q[2], q[3]]);
         }
         for (a, b, col) in point_boxes {
             let faces: [([usize; 4], [f32; 3]); 6] = [

@@ -47,6 +47,14 @@ impl GameFs {
         if !mounts.contains(&own) {
             mounts.push(own);
         }
+        // The editor icon sprites (`materials/editor/*`) live in the engine's `platform` folder,
+        // which Hammer always mounts even when gameinfo.txt doesn't list it.
+        if let Some(platform) = game_dir.parent().map(|r| r.join("platform")) {
+            let m = Mount::Dir(platform);
+            if matches!(&m, Mount::Dir(d) if vfs.is_dir(d)) && !mounts.contains(&m) {
+                mounts.push(m);
+            }
+        }
         let mut sources = Vec::new();
         for m in mounts {
             match m {
