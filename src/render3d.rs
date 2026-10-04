@@ -414,11 +414,11 @@ impl Camera {
         let eye = Vec3::new(self.pos.x as f32, self.pos.y as f32, self.pos.z as f32);
         let f = self.forward();
         let dir = Vec3::new(f.x as f32, f.y as f32, f.z as f32);
-        let view = Mat4::look_to_rh(eye, dir, Vec3::Z);
+        let view = glam::camera::rh::view::look_to_mat4(eye, dir, Vec3::Z);
         // `fov` is the horizontal field of view (like Hammer); GL wants the vertical one.
         let aspect = aspect.max(0.01);
         let vfov = 2.0 * ((self.fov.to_radians() * 0.5).tan() / aspect).atan();
-        let proj = Mat4::perspective_rh_gl(vfov, aspect, 4.0, 32768.0);
+        let proj = glam::camera::rh::proj::opengl::perspective(vfov, aspect, 4.0, 32768.0);
         proj * view
     }
     /// World-space ray through a normalised device position (x,y in -1..1, y up).

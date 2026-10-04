@@ -420,7 +420,7 @@ impl App {
         let center = base + mv.pan;
         let eye = center + dist * Vec3::new(mv.pitch.cos() * mv.yaw.cos(), mv.pitch.cos() * mv.yaw.sin(), mv.pitch.sin());
         let aspect = resp.rect.width() / resp.rect.height().max(1.0);
-        let vp = Mat4::perspective_rh_gl(0.9, aspect, (dist * 0.002).max(0.001), dist * 100.0 + radius * 4.0) * Mat4::look_at_rh(eye, center, Vec3::Z);
+        let vp = glam::camera::rh::proj::opengl::perspective(0.9, aspect, (dist * 0.002).max(0.001), dist * 100.0 + radius * 4.0) * glam::camera::rh::view::look_at_mat4(eye, center, Vec3::Z);
         let cam = Cam { vp, rect: resp.rect };
 
         let frame = model.sequences.get(mv.seq).map(|s| s.frame_at(mv.time)).unwrap_or(0.0);
