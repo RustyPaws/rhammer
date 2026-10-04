@@ -8,8 +8,9 @@ use glam::DVec3;
 
 impl App {
     pub(crate) fn menu(&mut self, ui: &mut egui::Ui) {
+        let mut bar: Vec<egui::Response> = Vec::new();
         egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("File", |ui| {
+            bar.push(ui.menu_button("File", |ui| {
                 if ui.button("New          Ctrl+N").clicked() {
                     self.request(PendingAction::New);
                     ui.close();
@@ -51,8 +52,8 @@ impl App {
                     self.request(PendingAction::Quit);
                     ui.close();
                 }
-            });
-            ui.menu_button("Edit", |ui| {
+            }).response);
+            bar.push(ui.menu_button("Edit", |ui| {
                 if ui.add_enabled(self.doc.can_undo(), egui::Button::new("Undo   Ctrl+Z")).clicked() {
                     self.undo();
                     ui.close();
@@ -96,8 +97,8 @@ impl App {
                     self.win.map_props = true;
                     ui.close();
                 }
-            });
-            ui.menu_button("Tools", |ui| {
+            }).response);
+            bar.push(ui.menu_button("Tools", |ui| {
                 if ui.button("Transform...   Ctrl+M").clicked() {
                     self.win.transform = true;
                     ui.close();
@@ -141,8 +142,8 @@ impl App {
                 });
                 ui.separator();
                 ui.add(egui::DragValue::new(&mut self.hollow_thickness).prefix("Hollow wall: ").range(1.0..=512.0));
-            });
-            ui.menu_button("View", |ui| {
+            }).response);
+            bar.push(ui.menu_button("View", |ui| {
                 ui.checkbox(&mut self.show_grid, "Show grid  (G)");
                 ui.checkbox(&mut self.wireframe, "3D wireframe  (F5)");
                 ui.checkbox(&mut self.show_entity_names, "Entity names");
@@ -178,8 +179,8 @@ impl App {
                     self.reset_layout();
                     ui.close();
                 }
-            });
-            ui.menu_button("Map", |ui| {
+            }).response);
+            bar.push(ui.menu_button("Map", |ui| {
                 #[cfg(feature = "local")]
                 {
                     if ui.button("Run map...  F9").clicked() {
@@ -203,8 +204,8 @@ impl App {
                     self.win.io_graph = true;
                     ui.close();
                 }
-            });
-            ui.menu_button("Options", |ui| {
+            }).response);
+            bar.push(ui.menu_button("Options", |ui| {
                 if ui.button("Game configurations...").clicked() {
                     self.win.game_cfg = true;
                     self.cfg_sel = self.settings.active;
@@ -216,13 +217,73 @@ impl App {
                     self.steam_edit = self.settings.editor.steam_dir.clone().unwrap_or_default();
                     ui.close();
                 }
-            });
-            ui.menu_button("Help", |ui| {
+            }).response);
+            bar.push(ui.menu_button("Help", |ui| {
                 if ui.button("About").clicked() {
                     self.win.about = true;
                     ui.close();
                 }
-            });
+            }).response);
         });
+        switch_on_hover(ui.ctx(), &bar);
+    }
+}
+
+/// While one of the bar's menus is open, hovering another bar button opens that one instead,
+/// like in desktop menu bars. Other popups (combo boxes, context menus) are left alone.
+fn switch_on_hover(ctx: &egui::Context, bar: &[egui::Response]) {
+    let id = |r: &egui::Response| egui::Popup::default_response_id(r);
+    if !bar.iter().any(|r| egui::Popup::is_id_open(ctx, id(r))) {
+        return;
+    }
+    if let Some(r) = bar.iter().find(|r| r.hovered() && !egui::Popup::is_id_open(ctx, id(r))) {
+        egui::Popup::open_id(ctx, id(r));
+        ctx.request_repaint();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Runs one frame of a two-menu bar; returns (File rect, Edit rect, which popups are open).
+    fn frame(ctx: &egui::Context, events: Vec<egui::Event>) -> (egui::Rect, egui::Rect, [bool; 2]) {
+        let input = egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(800.0, 600.0))), events, ..Default::default() };
+        let mut out = None;
+        let mut full = ctx.run_ui(input, |ui| {
+            let mut bar = Vec::new();
+            egui::MenuBar::new().ui(ui, |ui| {
+                bar.push(ui.menu_button("File", |ui| ui.label("f")).response);
+                bar.push(ui.menu_button("Edit", |ui| ui.label("e")).response);
+            });
+            switch_on_hover(ui.ctx(), &bar);
+            let open = |i: usize| egui::Popup::is_id_open(ui.ctx(), egui::Popup::default_response_id(&bar[i]));
+            out = Some((bar[0].rect, bar[1].rect, [open(0), open(1)]));
+        });
+        full.textures_delta.clear();
+        out.unwrap()
+    }
+
+    #[test]
+    fn hovering_another_bar_menu_switches_to_it() {
+        let ctx = egui::Context::default();
+        let (file, edit, _) = frame(&ctx, vec![]);
+        let click = |p: egui::Pos2, pressed| egui::Event::PointerButton { pos: p, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        frame(&ctx, vec![egui::Event::PointerMoved(file.center())]);
+        frame(&ctx, vec![click(file.center(), true)]);
+        let (_, _, open) = frame(&ctx, vec![click(file.center(), false)]);
+        assert_eq!(open, [true, false], "File opens on click");
+        frame(&ctx, vec![egui::Event::PointerMoved(edit.center())]);
+        let (_, _, open) = frame(&ctx, vec![]);
+        assert_eq!(open, [false, true], "hover switches to Edit");
+    }
+
+    #[test]
+    fn hovering_does_nothing_when_no_menu_is_open() {
+        let ctx = egui::Context::default();
+        let (_, edit, _) = frame(&ctx, vec![]);
+        frame(&ctx, vec![egui::Event::PointerMoved(edit.center())]);
+        let (_, _, open) = frame(&ctx, vec![]);
+        assert_eq!(open, [false, false]);
     }
 }
