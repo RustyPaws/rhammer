@@ -286,7 +286,9 @@ impl App {
             sh.scene.wireframe = self.wireframe;
             sh.scene.clear = [0.1, 0.11, 0.14];
         }
-        ui.painter().add(render3d::paint_callback(self.shared.clone(), rect));
+        // clip to the cell: the callback's glClear is only bounded by the scissor (clip) rect,
+        // so with the pane's clip it would wipe the views drawn before this one
+        ui.painter_at(rect).add(render3d::paint_callback(self.shared.clone(), rect));
 
         // draw the block preview as 2D overlay lines in 3D
         if self.tool == Tool::Block {

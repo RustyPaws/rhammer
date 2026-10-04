@@ -13,6 +13,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
 pub(crate) const SEL_COLOR: Color32 = Color32::from_rgb(255, 64, 64);
 
+#[derive(Clone, Copy)]
 pub(crate) struct Proj {
     pub(crate) rect: Rect,
     pub(crate) center: (f64, f64),
@@ -44,8 +45,4 @@ pub(crate) fn ent_color(e: &crate::formats::vmf::Entity, fgd: &crate::formats::f
         return Color32::from_rgb(c[0], c[1], c[2]);
     }
     Color32::from_rgb(220, 30, 220)
-}
-
-pub(crate) fn view_zoom(v: &View2D) -> f64 {
-    v.zoom
 }
