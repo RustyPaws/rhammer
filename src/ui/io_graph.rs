@@ -11,6 +11,8 @@ use crate::formats::vmf::{Connection, Entity, Map};
 
 const COL_W: f32 = 280.0;
 const GAP_Y: f32 = 36.0;
+/// Rough rendered width of a node, for fitting the view.
+const NODE_W: f32 = 240.0;
 
 #[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
 pub enum Scope {
@@ -52,11 +54,13 @@ pub struct IoGraph {
     /// Screen position of the graph area last frame. egui-snarl keeps its view transform in
     /// screen space, so when the window moves the transform has to move with it.
     origin: Option<Pos2>,
+    /// Fit the whole graph into view on the next frame.
+    fit: bool,
 }
 
 impl Default for IoGraph {
     fn default() -> Self {
-        IoGraph { scope: Scope::Selection, snarl: Snarl::new(), built_for: None, positions: HashMap::new(), wire_notes: HashMap::new(), origin: None }
+        IoGraph { scope: Scope::Selection, snarl: Snarl::new(), built_for: None, positions: HashMap::new(), wire_notes: HashMap::new(), origin: None, fit: true }
     }
 }
 
@@ -400,6 +404,18 @@ impl IoGraph {
         }
     }
 
+    /// View transform that shows every node, centred in `area` (never zoomed in past 1:1).
+    fn fit_transform(&self, area: egui::Rect) -> Option<TSTransform> {
+        let bb = self
+            .snarl
+            .nodes_pos()
+            .map(|(pos, n)| egui::Rect::from_min_size(pos, egui::vec2(NODE_W, node_height(n))))
+            .reduce(|a, b| a.union(b))?
+            .expand(GAP_Y);
+        let scale = (area.width() / bb.width()).min(area.height() / bb.height()).clamp(0.2, 1.0);
+        Some(TSTransform::new(area.center().to_vec2() - bb.center().to_vec2() * scale, scale))
+    }
+
     /// Draw the graph. `version` is `Doc::version`, `sel_stamp` is `App::sel_stamp`.
     /// Returns an entity the user double-clicked.
     pub fn show(&mut self, ui: &mut egui::Ui, map: &Map, version: u64, sel: &BTreeSet<u32>, sel_stamp: u64) -> Option<u32> {
@@ -410,6 +426,9 @@ impl IoGraph {
             if ui.button("Re-layout").clicked() {
                 relayout = true;
             }
+            if ui.button("Center").on_hover_text("Fit the whole graph into view").clicked() {
+                self.fit = true;
+            }
             ui.label(RichText::new("double-click a header to select the entity").small().weak());
         });
         if relayout {
@@ -419,6 +438,11 @@ impl IoGraph {
         let stamp = if self.scope == Scope::Selection { sel_stamp } else { 0 };
         let want = Some((version, stamp, self.scope));
         if self.built_for != want {
+            // a new selection or scope shows a different graph: bring it into view
+            // (a plain edit keeps the view where the user left it)
+            if self.built_for.is_none_or(|(_, s, sc)| (s, sc) != (stamp, self.scope)) {
+                self.fit = true;
+            }
             self.rebuild(map, sel);
             self.built_for = want;
         }
@@ -429,12 +453,13 @@ impl IoGraph {
             });
         }
 
-        let origin = ui.available_rect_before_wrap().min;
-        let shift = self.origin.map_or(Vec2::ZERO, |o| origin - o);
-        self.origin = Some(origin);
+        let area = ui.available_rect_before_wrap();
+        let shift = self.origin.map_or(Vec2::ZERO, |o| area.min - o);
+        self.origin = Some(area.min);
+        let fit = if std::mem::take(&mut self.fit) { self.fit_transform(area) } else { None };
 
         let mut picked = None;
-        let mut viewer = Viewer { sel, picked: &mut picked, notes: &self.wire_notes, shift };
+        let mut viewer = Viewer { sel, picked: &mut picked, notes: &self.wire_notes, shift, fit };
         SnarlWidget::new().id_salt("io_graph").show(&mut self.snarl, &mut viewer, ui);
 
         for (pos, node) in self.snarl.nodes_pos() {
@@ -452,6 +477,8 @@ struct Viewer<'a> {
     notes: &'a HashMap<(OutPinId, InPinId), String>,
     /// How far the graph area moved on screen since last frame.
     shift: Vec2,
+    /// Replaces the view transform this frame (see `IoGraph::fit`).
+    fit: Option<TSTransform>,
 }
 
 impl SnarlViewer<IoNode> for Viewer<'_> {
@@ -504,7 +531,10 @@ impl SnarlViewer<IoNode> for Viewer<'_> {
     }
 
     fn current_transform(&mut self, to_global: &mut TSTransform, _snarl: &mut Snarl<IoNode>) {
-        to_global.translation += self.shift;
+        match self.fit {
+            Some(t) => *to_global = t,
+            None => to_global.translation += self.shift,
+        }
     }
 
     // read-only graph: ignore edits
@@ -615,6 +645,8 @@ mod tests {
             frame(Pos2::new(100.0, 100.0));
         }
         let before = text_pos(&frame(Pos2::new(100.0, 100.0)), "btn").expect("node drawn");
+        let area = egui::Rect::from_min_size(Pos2::new(100.0, 100.0), egui::vec2(600.0, 400.0));
+        assert!(area.contains(before), "graph is fitted into view, btn at {before:?}");
         frame(Pos2::new(400.0, 300.0));
         let after = text_pos(&frame(Pos2::new(400.0, 300.0)), "btn").expect("node drawn");
         let moved = after - before;
