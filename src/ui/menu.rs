@@ -93,6 +93,10 @@ impl App {
                     self.win.find = true;
                     ui.close();
                 }
+                if ui.button("Properties...  Alt+Enter").clicked() {
+                    self.open_properties();
+                    ui.close();
+                }
                 if ui.button("Map properties...").clicked() {
                     self.win.map_props = true;
                     ui.close();

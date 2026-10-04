@@ -12,13 +12,15 @@ pub enum Pane {
     Views,
     Tools,
     Options,
+    /// Legacy: the object editor is a window now. Only kept so older saved layouts still load;
+    /// `lenient` strips it.
     Object,
     Textures,
     VisGroups,
 }
 
 impl Pane {
-    pub const PANELS: [Pane; 5] = [Pane::Tools, Pane::Options, Pane::Object, Pane::Textures, Pane::VisGroups];
+    pub const PANELS: [Pane; 4] = [Pane::Tools, Pane::Options, Pane::Textures, Pane::VisGroups];
 
     pub fn name(self) -> &'static str {
         match self {
@@ -47,7 +49,7 @@ impl Default for UiLayout {
         let mut dock = DockState::new(vec![Pane::Views]);
         let tree = dock.main_surface_mut();
         // for left / above splits the fraction is the share of the new node
-        let [views, _] = tree.split_right(NodeIndex::root(), 0.78, vec![Pane::Object, Pane::Textures, Pane::VisGroups]);
+        let [views, _] = tree.split_right(NodeIndex::root(), 0.78, vec![Pane::Textures, Pane::VisGroups]);
         let [views, _] = tree.split_left(views, 0.04, vec![Pane::Tools]);
         tree.split_above(views, 0.1, vec![Pane::Options]);
         UiLayout { dock, view_kinds: [0, 1, 2, 3], grid_split: [0.5, 0.5] }
@@ -95,7 +97,9 @@ impl UiLayout {
 /// Used for `Settings::ui`: a broken or incomplete saved layout falls back to the default
 /// instead of discarding the whole settings file.
 pub fn lenient<'de, D: Deserializer<'de>>(d: D) -> Result<UiLayout, D::Error> {
-    Ok(UiLayout::deserialize(d).ok().filter(UiLayout::is_valid).unwrap_or_default())
+    let mut layout = UiLayout::deserialize(d).ok().filter(UiLayout::is_valid).unwrap_or_default();
+    layout.dock.retain_tabs(|t| *t != Pane::Object);
+    Ok(layout)
 }
 
 struct Tabs<'a> {
@@ -117,7 +121,7 @@ impl TabViewer for Tabs<'_> {
         match *tab {
             Pane::Tools => self.app.tools_pane(ui),
             Pane::Options => self.app.options_pane(ui),
-            Pane::Object => self.app.object_tab(ui),
+            Pane::Object => {}
             Pane::Textures => self.app.texture_tab(ui),
             Pane::VisGroups => self.app.visgroups_tab(ui),
             Pane::Views => self.app.views_grid(ui),

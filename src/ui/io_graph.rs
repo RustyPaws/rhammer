@@ -65,7 +65,7 @@ impl Default for IoGraph {
 }
 
 /// `*` wildcard match, case-insensitive, as VBSP/the engine does for entity names.
-fn glob(pat: &str, name: &str) -> bool {
+pub(crate) fn glob(pat: &str, name: &str) -> bool {
     let (pat, name) = (pat.to_ascii_lowercase(), name.to_ascii_lowercase());
     if !pat.contains('*') {
         return pat == name;

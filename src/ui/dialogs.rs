@@ -1,7 +1,6 @@
 //! Modal-ish windows: game configurations, run map, compile log, transform, find, etc.
 
 use crate::app::*;
-use crate::ui::layout::Pane;
 #[cfg(feature = "local")]
 use crate::compile::Level;
 use crate::config::GameConfig;
@@ -66,6 +65,7 @@ impl App {
         self.dlg_model_viewer(ctx);
         self.dlg_transform(ctx);
         self.dlg_find(ctx);
+        self.dlg_object_props(ctx);
         self.dlg_io_graph(ctx);
         self.dlg_map_props(ctx);
         self.dlg_about(ctx);
@@ -523,7 +523,7 @@ impl App {
         if let Some(id) = pick {
             self.set_sel([id].into_iter().collect());
             self.frame_selection();
-            self.focus_pane = Some(Pane::Object);
+            self.open_properties();
         }
     }
 
@@ -542,7 +542,18 @@ impl App {
         if let Some(id) = pick {
             self.set_sel([id].into_iter().collect());
             self.frame_selection();
-            self.focus_pane = Some(Pane::Object);
+            self.open_properties();
+        }
+    }
+
+    fn dlg_object_props(&mut self, ctx: &egui::Context) {
+        if !self.win.object_props {
+            return;
+        }
+        let mut open = true;
+        egui::Window::new("Object Properties").open(&mut open).default_size([380.0, 540.0]).show(ctx, |ui| self.object_props_ui(ui));
+        if !open {
+            self.win.object_props = false;
         }
     }
 
@@ -554,7 +565,7 @@ impl App {
         egui::Window::new("Map properties (worldspawn)").open(&mut open).default_size([420.0, 480.0]).show(ctx, |ui| {
             let w = self.doc.map.world.clone();
             egui::ScrollArea::vertical().show(ui, |ui| {
-                self.entity_editor(ui, &w, &Sel::new(), true);
+                self.entity_editor(ui, &w, &Sel::new(), true, crate::ui::props::ObjTab::Properties);
             });
         });
         if !open {

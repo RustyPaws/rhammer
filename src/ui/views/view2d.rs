@@ -779,7 +779,6 @@ impl App {
         let class = self.ent_class.clone();
         let id = self.doc.create_entity(&class, p, &self.fgd);
         self.set_sel([id].into_iter().collect());
-        self.focus_pane = Some(crate::ui::layout::Pane::Object);
         self.status = format!("Created {class}");
     }
 }

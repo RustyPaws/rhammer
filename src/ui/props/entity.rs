@@ -1,4 +1,4 @@
-//! The entity property editor (class, keys, flags, model, outputs).
+//! The entity property editor: one tab of the Object Properties window at a time.
 
 use crate::editor::doc::Sel;
 use crate::formats::fgd::ClassKind;
@@ -13,7 +13,7 @@ pub(crate) enum Edit {
 }
 
 impl App {
-    pub fn entity_editor(&mut self, ui: &mut egui::Ui, e: &Entity, targets: &Sel, is_world: bool) {
+    pub fn entity_editor(&mut self, ui: &mut egui::Ui, e: &Entity, targets: &Sel, is_world: bool, tab: ObjTab) {
         let mut edits: Vec<Edit> = vec![];
         let mut new_conns: Option<Vec<vmf::Connection>> = None;
         let mut pick_model: Option<(String, String)> = None;
@@ -21,8 +21,10 @@ impl App {
         let class = self.fgd.get(&class_name).cloned();
         let tnames = self.doc.targetnames();
 
+        let mut goto: Option<u32> = None;
+
         // class selector
-        if !is_world {
+        if !is_world && tab == ObjTab::Properties {
             ui.horizontal(|ui| {
                 ui.label("Class");
                 let solid = !e.solids.is_empty();
@@ -44,7 +46,7 @@ impl App {
             ui.separator();
         }
 
-        egui::CollapsingHeader::new("Properties").default_open(true).show(ui, |ui| {
+        if tab == ObjTab::Properties {
             let mut shown: Vec<String> = vec!["classname".into(), "spawnflags".into()];
             // long FGD names are cut short (the full name is in the tooltip) so values keep their room
             let label_w = (ui.available_width() * 0.4).clamp(60.0, 160.0);
@@ -125,11 +127,15 @@ impl App {
                 }
                 ui.data_mut(|d| d.insert_temp(id, kv));
             });
-        });
+        }
 
         // spawn flags
+        let has_flags = class.as_ref().is_some_and(|c| c.props.iter().any(|p| p.name.eq_ignore_ascii_case("spawnflags")));
+        if tab == ObjTab::Flags && !has_flags {
+            ui.label(RichText::new("This class has no flags.").weak());
+        }
         if let Some(sf) = class.as_ref().and_then(|c| c.props.iter().find(|p| p.name.eq_ignore_ascii_case("spawnflags"))) {
-            egui::CollapsingHeader::new("Flags").default_open(false).show(ui, |ui| {
+            if tab == ObjTab::Flags {
                 let mut flags: i64 = e.get("spawnflags").and_then(|s| s.parse().ok()).unwrap_or_else(|| sf.default.parse().unwrap_or(0));
                 let before = flags;
                 for c in &sf.choices {
@@ -142,13 +148,15 @@ impl App {
                 if flags != before {
                     edits.push(Edit::Set("spawnflags".into(), flags.to_string()));
                 }
-            });
+            }
         }
 
         // model sequences / animation preview
         let model = if e.solids.is_empty() { crate::editor::doc::entity_model(e, &self.fgd).and_then(|p| self.models.get(&p).cloned().flatten()) } else { None };
         if let Some(model) = model.filter(|m| !m.sequences.is_empty()) {
-            egui::CollapsingHeader::new(format!("Model ({} sequences)", model.sequences.len())).id_salt("model_anim").default_open(true).show(ui, |ui| {
+            if tab == ObjTab::Properties {
+                ui.separator();
+                ui.label(RichText::new(format!("Model ({} sequences)", model.sequences.len())).strong());
                 let cur = self.entity_sequence(e, &model);
                 let seq = &model.sequences[cur];
                 let mut pick: Option<usize> = None;
@@ -223,13 +231,12 @@ impl App {
                         self.anim_stamp += 1;
                     }
                 });
-            });
+            }
         }
 
         // outputs
         if !is_world {
-            let title = format!("Outputs ({})", e.connections.len());
-            egui::CollapsingHeader::new(title).id_salt("outputs").default_open(false).show(ui, |ui| {
+            if tab == ObjTab::Outputs {
                 let mut conns = e.connections.clone();
                 let mut changed = false;
                 let mut remove: Option<usize> = None;
@@ -319,13 +326,14 @@ impl App {
                 if changed {
                     new_conns = Some(conns);
                 }
-            });
+            }
         }
 
-        // IO documentation
-        if let Some(c) = &class {
-            if !c.inputs.is_empty() {
-                egui::CollapsingHeader::new(format!("Inputs ({})", c.inputs.len())).default_open(false).show(ui, |ui| {
+        if tab == ObjTab::Inputs && !is_world {
+            goto = self.incoming_ui(ui, e);
+            if let Some(c) = class.as_ref().filter(|c| !c.inputs.is_empty()) {
+                ui.separator();
+                egui::CollapsingHeader::new(format!("Inputs of {} ({})", c.name, c.inputs.len())).id_salt("input_docs").default_open(false).show(ui, |ui| {
                     for i in &c.inputs {
                         ui.label(RichText::new(format!("{}({})", i.name, i.ty)).strong());
                         if !i.help.is_empty() {
@@ -334,6 +342,11 @@ impl App {
                     }
                 });
             }
+        }
+
+        if let Some(id) = goto {
+            self.set_sel([id].into_iter().collect());
+            return;
         }
 
         if let Some((key, cur)) = pick_model {
@@ -390,6 +403,48 @@ impl App {
             }
         }
         self.doc.touch();
+    }
+
+    /// The Inputs tab: every output in the map that targets this entity. Returns the entity whose
+    /// "go to" button was clicked.
+    fn incoming_ui(&self, ui: &mut egui::Ui, e: &Entity) -> Option<u32> {
+        let Some(name) = e.get("targetname").filter(|n| !n.is_empty()) else {
+            ui.label(RichText::new("This entity has no name, so no output can target it.").weak());
+            return None;
+        };
+        let incoming: Vec<(&Entity, &vmf::Connection)> =
+            self.doc.map.entities.iter().flat_map(|src| src.connections.iter().filter(|c| crate::ui::io_graph::glob(&c.target, name)).map(move |c| (src, c))).collect();
+        if incoming.is_empty() {
+            ui.label(RichText::new(format!("No output targets \"{name}\".")).weak());
+            return None;
+        }
+        let mut goto = None;
+        for (src, c) in incoming {
+            ui.group(|ui| {
+                ui.set_width(ui.available_width());
+                trailing(ui, |ui| {
+                    if src.id != e.id && ui.small_button("go to").on_hover_text("select the entity that fires this").clicked() {
+                        goto = Some(src.id);
+                    }
+                    fill_rest(ui, |ui| {
+                        let who = src.get("targetname").filter(|n| !n.is_empty()).map_or_else(|| format!("{} #{}", src.classname(), src.id), |n| format!("{n} ({})", src.classname()));
+                        ui.add(egui::Label::new(RichText::new(who).strong()).truncate());
+                    });
+                });
+                let mut what = format!("{} \u{2192} {}", c.output, c.input);
+                if !c.param.is_empty() {
+                    what += &format!("({})", c.param);
+                }
+                if c.delay > 0.0 {
+                    what += &format!(" after {}s", vmf::fmt(c.delay));
+                }
+                if c.times == 1 {
+                    what += " once";
+                }
+                ui.add(egui::Label::new(what).wrap());
+            });
+        }
+        goto
     }
 }
 

@@ -1,4 +1,4 @@
-//! Right-hand panel: object properties, texture browser / face editing, visgroups.
+//! The Object Properties window and the right-hand panel tabs (textures / face editing, visgroups).
 
 use crate::app::*;
 use crate::editor::doc::Sel;
@@ -10,6 +10,29 @@ mod entity;
 mod textures;
 mod visgroups;
 pub(crate) mod widgets;
+
+/// Tabs of the Object Properties window, as in Hammer.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ObjTab {
+    #[default]
+    Properties,
+    Outputs,
+    Inputs,
+    Flags,
+}
+
+impl ObjTab {
+    pub const ALL: [ObjTab; 4] = [ObjTab::Properties, ObjTab::Outputs, ObjTab::Inputs, ObjTab::Flags];
+
+    pub fn name(self) -> &'static str {
+        match self {
+            ObjTab::Properties => "Properties",
+            ObjTab::Outputs => "Outputs",
+            ObjTab::Inputs => "Inputs",
+            ObjTab::Flags => "Flags",
+        }
+    }
+}
 
 /// Scrolls both ways. Widgets still size themselves to the visible width, and whatever can't
 /// shrink any further stays reachable through the horizontal scrollbar.
@@ -31,7 +54,9 @@ pub(crate) fn fill_rest<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) ->
 }
 
 impl App {
-    pub(crate) fn object_tab(&mut self, ui: &mut egui::Ui) {
+    /// Contents of the Object Properties window: brush tools, then the tabs of the first
+    /// selected entity (edits apply to every selected entity).
+    pub(crate) fn object_props_ui(&mut self, ui: &mut egui::Ui) {
         let ents: Vec<u32> = self.sel.iter().copied().filter(|i| self.doc.entity(*i).is_some()).collect();
         let solids: Vec<u32> = self.sel.iter().copied().filter(|i| self.doc.entity(*i).is_none()).collect();
         if self.sel.is_empty() {
@@ -41,8 +66,22 @@ impl App {
             }
             return;
         }
+        let primary = ents.first().and_then(|id| self.doc.entity(*id)).cloned();
+        if let Some(e) = &primary {
+            ui.horizontal_wrapped(|ui| {
+                for t in ObjTab::ALL {
+                    let label = match t {
+                        ObjTab::Outputs if !e.connections.is_empty() => format!("{} ({})", t.name(), e.connections.len()),
+                        _ => t.name().to_string(),
+                    };
+                    ui.selectable_value(&mut self.obj_tab, t, label);
+                }
+            });
+            ui.separator();
+        }
+        let tab = if primary.is_some() { self.obj_tab } else { ObjTab::Properties };
         panel_scroll(ui, |ui| {
-            if !solids.is_empty() {
+            if !solids.is_empty() && tab == ObjTab::Properties {
                 ui.label(RichText::new(format!("{} brush(es)", solids.len())).strong());
                 ui.horizontal(|ui| {
                     if ui.button("Make hollow").clicked() {
@@ -60,14 +99,12 @@ impl App {
                 });
                 ui.separator();
             }
-            if let Some(&primary) = ents.first() {
+            if let Some(e) = &primary {
                 let targets: Sel = ents.iter().copied().collect();
                 if ents.len() > 1 {
                     ui.label(RichText::new(format!("{} entities (editing applies to all)", ents.len())).strong());
                 }
-                if let Some(e) = self.doc.entity(primary).cloned() {
-                    self.entity_editor(ui, &e, &targets, false);
-                }
+                self.entity_editor(ui, e, &targets, false, tab);
             }
         });
     }

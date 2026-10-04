@@ -255,6 +255,18 @@ impl App {
                 }
             }
         }
+        // Hammer: double-click an object to open its properties
+        if resp.double_clicked_by(egui::PointerButton::Primary) && matches!(self.tool, Tool::Select | Tool::Block | Tool::Clip | Tool::Vertex) {
+            if let Some(p) = resp.interact_pointer_pos() {
+                let (o, d) = ray_at(self, p);
+                if let Some((id, _, _)) = self.pick_3d(o, d) {
+                    if !self.sel.contains(&id) {
+                        self.set_sel([id].into_iter().collect());
+                    }
+                    self.open_properties();
+                }
+            }
+        }
         if resp.clicked_by(egui::PointerButton::Secondary) && self.tool == Tool::Texture {
             if let Some(p) = resp.interact_pointer_pos() {
                 let (o, d) = ray_at(self, p);

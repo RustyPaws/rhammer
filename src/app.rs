@@ -70,6 +70,7 @@ pub struct Windows {
     pub about: bool,
     pub map_props: bool,
     pub io_graph: bool,
+    pub object_props: bool,
     pub quit_confirm: bool,
     pub pending_action: Option<PendingAction>,
 }
@@ -152,6 +153,8 @@ pub struct App {
     pub new_visgroup: String,
     pub find_text: String,
     pub io_graph: crate::ui::io_graph::IoGraph,
+    /// Open tab of the Object Properties window.
+    pub obj_tab: crate::ui::props::ObjTab,
     pub transform_dlg: TransformDlg,
     pub hollow_thickness: f64,
     pub last_prop_edit: Option<(String, web_time::Instant)>,
@@ -280,6 +283,7 @@ impl App {
             new_visgroup: String::new(),
             find_text: String::new(),
             io_graph: Default::default(),
+            obj_tab: Default::default(),
             transform_dlg: TransformDlg { mv: [0.0; 3], rot: [0.0; 3], scale: [1.0; 3] },
             hollow_thickness: 16.0,
             last_prop_edit: None,
@@ -816,8 +820,13 @@ impl App {
         self.doc.checkpoint();
         if let Some(id) = self.doc.tie_to_entity(&s, class, &self.fgd) {
             self.set_sel([id].into_iter().collect());
-            self.focus_pane = Some(Pane::Object);
+            self.open_properties();
         }
+    }
+
+    /// Shows the Object Properties window for the current selection.
+    pub fn open_properties(&mut self) {
+        self.win.object_props = true;
     }
 
     pub fn move_to_world(&mut self) {
@@ -1005,7 +1014,9 @@ impl App {
                 self.faces.clear();
                 self.bump_sel();
             }
-            if pressed(Key::Enter) {
+            if pressed(Key::Enter) && alt {
+                self.open_properties();
+            } else if pressed(Key::Enter) {
                 match self.tool {
                     Tool::Block => self.commit_block(),
                     Tool::Clip => self.commit_clip(),
@@ -1187,11 +1198,11 @@ impl App {
                 }
             }
             if let Ok(t) = std::env::var("RHAMMER_TAB") {
-                self.focus_pane = Some(match t.as_str() {
-                    "tex" => Pane::Textures,
-                    "vis" => Pane::VisGroups,
-                    _ => Pane::Object,
-                });
+                match t.as_str() {
+                    "tex" => self.focus_pane = Some(Pane::Textures),
+                    "vis" => self.focus_pane = Some(Pane::VisGroups),
+                    _ => self.open_properties(),
+                }
             }
             if let Ok(id) = std::env::var("RHAMMER_PICK") {
                 if let Ok(id) = id.parse::<u32>() {
