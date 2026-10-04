@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- edges with draggable vertex handles -->
+  <path d="M5 6 L18 4 L19 18 L6 19 Z" stroke-opacity="0.7"/>
+  <g fill="#ffffff" stroke="none">
+    <rect x="2.8" y="3.8" width="4.4" height="4.4"/>
+    <rect x="15.8" y="1.8" width="4.4" height="4.4"/>
+    <rect x="16.8" y="15.8" width="4.4" height="4.4"/>
+    <rect x="3.8" y="16.8" width="4.4" height="4.4"/>
+  </g>
+</svg>

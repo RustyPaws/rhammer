@@ -19,15 +19,7 @@ use glam::{DQuat, DVec3};
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Tool {
-    Select,
-    Block,
-    Entity,
-    Clip,
-    Vertex,
-    Texture,
-}
+pub use crate::ui::tools::Tool;
 
 #[derive(Clone, Copy)]
 pub struct View2D {
@@ -216,6 +208,7 @@ pub const VIEW_NAMES: [&str; 4] = ["3D Perspective", "Top (X/Y)", "Front (X/Z)",
 
 impl App {
     pub fn new(cc: &eframe::CreationContext<'_>) -> App {
+        egui_extras::install_image_loaders(&cc.egui_ctx);
         let mut settings = Settings::load();
         #[cfg(feature = "local")]
         let vfs = crate::platform::default_vfs();
@@ -989,12 +982,9 @@ impl App {
             return;
         }
         if shift {
-            if pressed(Key::S) { self.tool = Tool::Select; }
-            if pressed(Key::B) { self.tool = Tool::Block; }
-            if pressed(Key::E) { self.tool = Tool::Entity; }
-            if pressed(Key::C) { self.tool = Tool::Clip; }
-            if pressed(Key::V) { self.tool = Tool::Vertex; }
-            if pressed(Key::A) { self.tool = Tool::Texture; self.focus_pane = Some(Pane::Textures); }
+            if let Some(t) = Tool::ALL.into_iter().find(|t| pressed(t.shortcut())) {
+                self.set_tool(t);
+            }
             if pressed(Key::F) { self.frame_selection(); }
         }
         if !shift && !alt {
@@ -1264,28 +1254,6 @@ impl App {
                     self.win.about = true;
                     ui.close();
                 }
-            });
-        });
-    }
-
-    pub fn tools_pane(&mut self, ui: &mut egui::Ui) {
-        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-            for (t, label, tip) in [
-                (Tool::Select, "Select", "Selection tool (Shift+S)"),
-                (Tool::Block, "Block", "Block tool (Shift+B)"),
-                (Tool::Entity, "Entity", "Entity tool (Shift+E)"),
-                (Tool::Clip, "Clip", "Clip tool (Shift+C)"),
-                (Tool::Vertex, "Vertex", "Vertex manipulation tool (Shift+V)"),
-                (Tool::Texture, "Texture", "Texture application (Shift+A)"),
-            ] {
-                if ui.selectable_label(self.tool == t, label).on_hover_text(tip).clicked() {
-                    self.tool = t;
-                    if t == Tool::Texture {
-                        self.focus_pane = Some(Pane::Textures);
-                    }
-                }
-            }
             });
         });
     }

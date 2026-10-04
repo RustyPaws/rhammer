@@ -573,7 +573,8 @@ impl App {
             ui.label("Reads and writes VMF; unknown blocks are preserved verbatim.");
             ui.separator();
             ui.label("Views: RMB look + WASD/QE fly in 3D, MMB/RMB pan and wheel zoom in 2D, Z maximizes a view.");
-            ui.label("Tools: Shift+S select, Shift+B block, Shift+E entity, Shift+C clip, Shift+A textures.");
+            let tools: Vec<String> = crate::app::Tool::ALL.iter().map(|t| format!("Shift+{} {}", t.shortcut().name(), t.name().to_lowercase())).collect();
+            ui.label(format!("Tools: {}.", tools.join(", ")));
             ui.label("Enter creates the block/applies the clip. Ctrl+H hollow, Ctrl+T tie to entity, F9 run map.");
         });
         if !open {

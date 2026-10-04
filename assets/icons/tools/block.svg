@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- isometric brush cube -->
+  <path d="M12 2.5 L20.5 7 L20.5 17 L12 21.5 L3.5 17 L3.5 7 Z"/>
+  <path d="M3.5 7 L12 11.5 L20.5 7 M12 11.5 L12 21.5"/>
+  <path d="M12 11.5 L20.5 7 L20.5 17 L12 21.5 Z" fill="#ffffff" fill-opacity="0.25" stroke="none"/>
+</svg>

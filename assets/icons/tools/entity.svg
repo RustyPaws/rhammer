@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="#ffffff" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+  <!-- light bulb, the classic point entity -->
+  <path d="M9 17 L9 14.6 C6.9 13.4 5.5 11.3 5.5 9 A6.5 6.5 0 0 1 18.5 9 C18.5 11.3 17.1 13.4 15 14.6 L15 17 Z" fill="#ffffff" fill-opacity="0.25"/>
+  <path d="M9.5 20 L14.5 20 M10.5 22.5 L13.5 22.5"/>
+</svg>
