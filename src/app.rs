@@ -1270,6 +1270,7 @@ impl App {
 
     pub fn tools_pane(&mut self, ui: &mut egui::Ui) {
         egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
             for (t, label, tip) in [
                 (Tool::Select, "Select", "Selection tool (Shift+S)"),
                 (Tool::Block, "Block", "Block tool (Shift+B)"),
@@ -1285,19 +1286,26 @@ impl App {
                     }
                 }
             }
-            ui.separator();
-            ui.horizontal(|ui| {
+            });
+        });
+    }
+
+    /// Grid / snap toggles and the settings of the active tool.
+    pub fn options_pane(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+            ui.horizontal_wrapped(|ui| {
+            {
                 ui.label("Grid:");
-                egui::ComboBox::from_id_salt("grid").selected_text(format!("{}", self.grid)).width(60.0).show_ui(ui, |ui| {
+                egui::ComboBox::from_id_salt("grid").selected_text(format!("{}", self.grid)).width(ui.available_width().clamp(30.0, 60.0)).show_ui(ui, |ui| {
                     for g in [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0] {
                         ui.selectable_value(&mut self.grid, g, format!("{g}"));
                     }
                 });
-            });
+            }
             ui.checkbox(&mut self.snap, "Snap");
             ui.checkbox(&mut self.show_grid, "Grid");
             ui.checkbox(&mut self.tex_lock, "Texture lock");
-            ui.separator();
+            ui.end_row();
             match self.tool {
                 Tool::Block => {
                     egui::ComboBox::from_id_salt("prim").selected_text(self.primitive.name()).show_ui(ui, |ui| {
@@ -1308,7 +1316,7 @@ impl App {
                     if matches!(self.primitive, Primitive::Cylinder | Primitive::Cone) {
                         ui.add(egui::DragValue::new(&mut self.prim_sides).range(3..=64).prefix("sides "));
                     }
-                    ui.label(format!("Material: {}", self.cur_mat));
+                    ui.add(egui::Label::new(format!("Material: {}", self.cur_mat)).wrap());
                     if ui.button("...").clicked() {
                         self.win.tex_browser = true;
                     }
@@ -1330,7 +1338,7 @@ impl App {
                     }
                 }
                 Tool::Texture => {
-                    ui.label(format!("Material: {}", self.cur_mat));
+                    ui.add(egui::Label::new(format!("Material: {}", self.cur_mat)).wrap());
                     ui.label(RichText::new("LMB select face - RMB apply texture").weak());
                 }
                 Tool::Vertex => {
@@ -1340,12 +1348,13 @@ impl App {
                     ui.label(RichText::new("click / drag to select - Shift+drag clones").weak());
                 }
             }
+            });
         });
     }
 
     pub fn entity_class_picker(&mut self, ui: &mut egui::Ui) {
         let cur = self.ent_class.clone();
-        egui::ComboBox::from_id_salt("entclass").selected_text(cur).width(220.0).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
+        egui::ComboBox::from_id_salt("entclass").selected_text(cur).width((ui.available_width() - 8.0).clamp(60.0, 220.0)).height(400.0).close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside).show_ui(ui, |ui| {
             ui.add(egui::TextEdit::singleline(&mut self.ent_filter).hint_text("filter..."));
             let f = self.ent_filter.to_ascii_lowercase();
             egui::ScrollArea::vertical().max_height(360.0).show(ui, |ui| {
