@@ -1,6 +1,7 @@
 //! Modal-ish windows: game configurations, run map, compile log, transform, find, etc.
 
 use crate::app::*;
+use crate::ui::layout::Pane;
 #[cfg(feature = "local")]
 use crate::compile::Level;
 use crate::config::GameConfig;
@@ -57,6 +58,7 @@ impl App {
         self.dlg_game_cfg(ctx);
         #[cfg(feature = "local")]
         {
+            self.dlg_editor_opts(ctx);
             self.dlg_run_map(ctx);
             self.dlg_compile_log(ctx);
         }
@@ -94,6 +96,44 @@ impl App {
             if go {
                 self.perform(action);
             }
+        }
+    }
+
+    #[cfg(feature = "local")]
+    fn dlg_editor_opts(&mut self, ctx: &egui::Context) {
+        if !self.win.editor_opts {
+            return;
+        }
+        let mut open = true;
+        let mut apply = false;
+        egui::Window::new("Editor options").open(&mut open).collapsible(false).default_width(520.0).show(ctx, |ui| {
+            ui.label(RichText::new("Steam").strong());
+            egui::Grid::new("editor_opts_grid").num_columns(1).show(ui, |ui| {
+                path_row(ui, "Steam folder (contains steamapps)", &mut self.steam_edit, true, &[]);
+            });
+            ui.label(
+                "Forces this Steam folder when resolving |appid_<id>| search paths.                  Leave empty to search the default Steam locations.",
+            );
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button("OK / Apply").clicked() {
+                    apply = true;
+                    self.win.editor_opts = false;
+                }
+                if ui.button("Close").clicked() {
+                    self.win.editor_opts = false;
+                }
+            });
+        });
+        if !open {
+            self.win.editor_opts = false;
+        }
+        if apply {
+            let dir = self.steam_edit.trim();
+            self.settings.editor.steam_dir = (!dir.is_empty()).then(|| dir.to_string());
+            self.settings.save();
+            self.reload_game_data();
+            self.status = "Editor options applied".into();
         }
     }
 
@@ -483,7 +523,7 @@ impl App {
         if let Some(id) = pick {
             self.set_sel([id].into_iter().collect());
             self.frame_selection();
-            self.tab = RightTab::Object;
+            self.focus_pane = Some(Pane::Object);
         }
     }
 
@@ -502,7 +542,7 @@ impl App {
         if let Some(id) = pick {
             self.set_sel([id].into_iter().collect());
             self.frame_selection();
-            self.tab = RightTab::Object;
+            self.focus_pane = Some(Pane::Object);
         }
     }
 

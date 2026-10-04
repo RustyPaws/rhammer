@@ -15,7 +15,7 @@ pub fn import_hammer(vfs: &dyn Vfs, path: &Path) -> anyhow::Result<Vec<GameConfi
         if let Some(games) = games.get_block("Games") {
             for g in games {
                 if let Value::Block(c) = &g.value {
-                    out.push(crate::config::game_from_block(&g.key, c));
+                    out.push(GameConfig::from_hammer_block(&g.key, c));
                 }
             }
         }

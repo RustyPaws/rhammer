@@ -12,20 +12,6 @@ mod visgroups;
 mod widgets;
 
 impl App {
-    pub fn right_panel(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal(|ui| {
-            ui.selectable_value(&mut self.tab, RightTab::Object, "Object");
-            ui.selectable_value(&mut self.tab, RightTab::Texture, "Textures");
-            ui.selectable_value(&mut self.tab, RightTab::Visgroups, "VisGroups");
-        });
-        ui.separator();
-        match self.tab {
-            RightTab::Object => self.object_tab(ui),
-            RightTab::Texture => self.texture_tab(ui),
-            RightTab::Visgroups => self.visgroups_tab(ui),
-        }
-    }
-
     pub(crate) fn object_tab(&mut self, ui: &mut egui::Ui) {
         let ents: Vec<u32> = self.sel.iter().copied().filter(|i| self.doc.entity(*i).is_some()).collect();
         let solids: Vec<u32> = self.sel.iter().copied().filter(|i| self.doc.entity(*i).is_none()).collect();

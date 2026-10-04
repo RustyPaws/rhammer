@@ -84,7 +84,7 @@ impl App {
     }
 
     pub(crate) fn view2d_ui(&mut self, ui: &mut egui::Ui, rect: Rect, vi: usize) {
-        let id = egui::Id::new(("view2d", vi));
+        let id = ui.id().with(("view2d", vi));
         let resp = ui.interact(rect, id, Sense::click_and_drag());
         let painter = ui.painter_at(rect);
         painter.rect_filled(rect, 0.0, Color32::from_rgb(16, 16, 20));
@@ -779,7 +779,7 @@ impl App {
         let class = self.ent_class.clone();
         let id = self.doc.create_entity(&class, p, &self.fgd);
         self.set_sel([id].into_iter().collect());
-        self.tab = RightTab::Object;
+        self.focus_pane = Some(crate::ui::layout::Pane::Object);
         self.status = format!("Created {class}");
     }
 }

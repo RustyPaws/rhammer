@@ -93,7 +93,7 @@ impl App {
     }
 
     pub(crate) fn view3d_ui(&mut self, ui: &mut egui::Ui, rect: Rect) {
-        let id = egui::Id::new("view3d");
+        let id = ui.id().with("view3d");
         let resp = ui.interact(rect, id, Sense::click_and_drag());
         let hovered = resp.hovered();
         let aspect = rect.width() / rect.height().max(1.0);

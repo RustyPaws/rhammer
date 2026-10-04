@@ -47,7 +47,7 @@ pub fn parse_entries(root: &[kv::Node]) -> Vec<RawEntry> {
 /// (`|gameinfo_path|`); other relative paths are relative to its parent (the engine root).
 /// `|appid_<id>|path` entries (used by the SDK template mods to mount TF2 / HL2 content) are
 /// relative to the install folder of that Steam app; they are skipped if it is not installed.
-pub fn resolve(vfs: &dyn Vfs, entries: &[RawEntry], game_dir: &Path) -> Vec<Mount> {
+pub fn resolve(vfs: &dyn Vfs, entries: &[RawEntry], game_dir: &Path, steam_dir: Option<&Path>) -> Vec<Mount> {
     let root = game_dir.parent().unwrap_or(game_dir);
     let mut steam: Option<SteamLibraries> = None;
     let mut out: Vec<Mount> = Vec::new();
@@ -63,7 +63,7 @@ pub fn resolve(vfs: &dyn Vfs, entries: &[RawEntry], game_dir: &Path) -> Vec<Moun
         } else if let Some(r) = strip_macro(&p, "|all_source_engine_paths|") {
             (root.to_path_buf(), r)
         } else if let Some((id, r)) = split_appid_macro(&p) {
-            let libs = steam.get_or_insert_with(|| SteamLibraries::discover(vfs, game_dir));
+            let libs = steam.get_or_insert_with(|| SteamLibraries::discover(vfs, game_dir, steam_dir));
             let Some(dir) = libs.install_dir(vfs, id) else { continue };
             (dir, r)
         } else {
@@ -109,10 +109,10 @@ fn split_appid_macro(p: &str) -> Option<(u32, &str)> {
 }
 
 /// Reads `<game_dir>/gameinfo.txt` and returns its mounts (empty if missing or malformed).
-pub fn load(vfs: &dyn Vfs, game_dir: &Path) -> Vec<Mount> {
+pub fn load(vfs: &dyn Vfs, game_dir: &Path, steam_dir: Option<&Path>) -> Vec<Mount> {
     let Some(bytes) = vfs.read(&game_dir.join("gameinfo.txt")) else { return vec![] };
     match kv::parse(&String::from_utf8_lossy(&bytes)) {
-        Ok(root) => resolve(vfs, &parse_entries(&root), game_dir),
+        Ok(root) => resolve(vfs, &parse_entries(&root), game_dir, steam_dir),
         Err(_) => vec![],
     }
 }
@@ -162,6 +162,7 @@ mod tests {
                 entry("|GAMEINFO_PATH|."),
             ],
             &game,
+            None,
         );
         assert_eq!(
             m,

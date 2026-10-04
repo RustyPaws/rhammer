@@ -48,8 +48,8 @@ fn find_key(nodes: &[Node], key: &str) -> Option<String> {
 }
 
 impl Materials {
-    pub fn new(vfs: SharedVfs, vpks: &VpkCache, game_dir: &Path) -> Materials {
-        let fs = GameFs::new(vfs, vpks, game_dir);
+    pub fn new(vfs: SharedVfs, vpks: &VpkCache, game_dir: &Path, steam_dir: Option<&Path>) -> Materials {
+        let fs = GameFs::new(vfs, vpks, game_dir, steam_dir);
         let all: Vec<String> = fs
             .list("materials/", "vmt")
             .into_iter()

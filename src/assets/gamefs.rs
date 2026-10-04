@@ -36,9 +36,9 @@ impl GameFs {
     /// Mounts the game from its `gameinfo.txt` `SearchPaths`. Sibling `<game>_dlcN` folders
     /// (mounted implicitly by the engine) take priority; without a usable gameinfo only the
     /// game folder itself is mounted.
-    pub fn new(vfs: SharedVfs, cache: &VpkCache, game_dir: &Path) -> GameFs {
+    pub fn new(vfs: SharedVfs, cache: &VpkCache, game_dir: &Path, steam_dir: Option<&Path>) -> GameFs {
         let mut mounts: Vec<Mount> = dlc_dirs(&*vfs, game_dir).into_iter().map(Mount::Dir).collect();
-        for m in searchpaths::load(&*vfs, game_dir) {
+        for m in searchpaths::load(&*vfs, game_dir, steam_dir) {
             if !mounts.contains(&m) {
                 mounts.push(m);
             }

@@ -2,6 +2,7 @@
 
 pub mod dialogs;
 pub mod io_graph;
+pub mod layout;
 pub mod model_viewer;
 pub mod props;
 pub mod views;

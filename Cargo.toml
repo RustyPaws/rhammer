@@ -16,6 +16,9 @@ eframe = { version = "0.36.2", default-features = false, features = ["default_fo
 glam = "0.33"
 anyhow = "1"
 logos = "0.16"
+serde = { version = "1", features = ["derive"] }
+toml = "0.8"
+egui_dock = { version = "0.21", features = ["serde"] }
 egui-snarl = { version = "0.12", default-features = false }
 rfd = { version = "0.15", optional = true }
 # `Instant` that also works in the browser (re-exports std's on desktop)

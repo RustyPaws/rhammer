@@ -12,22 +12,23 @@ pub struct SteamLibraries {
 
 impl SteamLibraries {
     /// Libraries around `game_dir` (a mod in `steamapps/sourcemods` or a game in
-    /// `steamapps/common`), the extra libraries listed in their `libraryfolders.vdf`, and the
-    /// default Steam install locations.
-    pub fn discover(vfs: &dyn Vfs, game_dir: &Path) -> SteamLibraries {
+    /// `steamapps/common`) plus the extra libraries listed in their `libraryfolders.vdf`.
+    /// `steam_dir` (the Steam folder that contains `steamapps`, from the editor options) forces
+    /// that Steam install; without it the default Steam install locations are searched.
+    pub fn discover(vfs: &dyn Vfs, game_dir: &Path, steam_dir: Option<&Path>) -> SteamLibraries {
         let mut libs = SteamLibraries { steamapps: vec![] };
         for dir in game_dir.ancestors() {
             if dir.file_name().is_some_and(|n| n.eq_ignore_ascii_case("steamapps")) {
                 libs.add(dir.to_path_buf());
             }
         }
-        for steam in default_steam_roots() {
-            libs.add(steam.join("steamapps"));
-        }
-        // Temporary fallback until the Steam path is read from the registry: `RHAMMER_STEAM_DIR`
-        // is the Steam folder (the one that contains `steamapps`). Searched last.
-        if let Some(steam) = std::env::var_os("RHAMMER_STEAM_DIR") {
-            libs.add(PathBuf::from(steam).join("steamapps"));
+        match steam_dir {
+            Some(steam) => libs.add(steam.join("steamapps")),
+            None => {
+                for steam in default_steam_roots() {
+                    libs.add(steam.join("steamapps"));
+                }
+            }
         }
         let mut i = 0;
         while i < libs.steamapps.len() {

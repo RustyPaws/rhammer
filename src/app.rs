@@ -7,6 +7,7 @@ use crate::config::{GameConfig, Settings};
 use crate::editor::doc::{Clipboard, Doc, Sel, Xform};
 use crate::formats::fgd::Fgd;
 use crate::editor::geom::{self, Plane, Primitive};
+use crate::ui::layout::Pane;
 use crate::render3d::{Camera, SharedRef};
 use crate::formats::vmf::Map;
 #[cfg(feature = "local")]
@@ -26,13 +27,6 @@ pub enum Tool {
     Clip,
     Vertex,
     Texture,
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub enum RightTab {
-    Object,
-    Texture,
-    Visgroups,
 }
 
 #[derive(Clone, Copy)]
@@ -69,6 +63,8 @@ pub struct ClipState {
 #[derive(Default)]
 pub struct Windows {
     pub game_cfg: bool,
+    #[cfg(feature = "local")]
+    pub editor_opts: bool,
     pub model_viewer: bool,
     #[cfg(feature = "local")]
     pub run_map: bool,
@@ -147,12 +143,17 @@ pub struct App {
     pub clipboard: Clipboard,
     pub status: String,
     pub maximized: Option<usize>,
-    pub tab: RightTab,
+    /// Pane to bring to the front on the next frame (e.g. Textures when the Texture tool is picked).
+    pub focus_pane: Option<Pane>,
+    /// Serialized layout last written to disk.
+    pub layout_saved: String,
     pub win: Windows,
     #[cfg(feature = "local")]
     pub compile: Option<CompileJob>,
     pub tex_filter: String,
     pub cfg_sel: usize,
+    /// Draft of `settings.editor.steam_dir` while the Editor options window is open.
+    pub steam_edit: String,
     pub hover_world: Option<DVec3>,
     pub new_visgroup: String,
     pub find_text: String,
@@ -225,7 +226,7 @@ impl App {
         #[cfg(feature = "web")]
         web.set_ctx(cc.egui_ctx.clone());
         let vpks = crate::assets::gamefs::VpkCache::default();
-        let (fgd, mats) = load_game_data(&vfs, &vpks, settings.active_game());
+        let (fgd, mats) = load_game_data(&vfs, &vpks, settings.active_game(), settings.steam_dir().as_deref());
         let shared: SharedRef = Default::default();
         let _ = &mut settings;
         let mut app = App {
@@ -272,12 +273,14 @@ impl App {
             clipboard: Clipboard::default(),
             status: "Ready".into(),
             maximized: None,
-            tab: RightTab::Object,
+            focus_pane: None,
+            layout_saved: String::new(),
             win: Windows::default(),
             #[cfg(feature = "local")]
             compile: None,
             tex_filter: String::new(),
             cfg_sel: 0,
+            steam_edit: String::new(),
             hover_world: None,
             new_visgroup: String::new(),
             find_text: String::new(),
@@ -340,7 +343,7 @@ impl App {
     }
 
     pub fn reload_game_data(&mut self) {
-        let (fgd, mats) = load_game_data(&self.vfs, &self.vpks, self.settings.active_game());
+        let (fgd, mats) = load_game_data(&self.vfs, &self.vpks, self.settings.active_game(), self.settings.steam_dir().as_deref());
         self.fgd = fgd;
         self.mats = mats;
         self.thumb_tex.clear();
@@ -818,7 +821,7 @@ impl App {
         self.doc.checkpoint();
         if let Some(id) = self.doc.tie_to_entity(&s, class, &self.fgd) {
             self.set_sel([id].into_iter().collect());
-            self.tab = RightTab::Object;
+            self.focus_pane = Some(Pane::Object);
         }
     }
 
@@ -991,7 +994,7 @@ impl App {
             if pressed(Key::E) { self.tool = Tool::Entity; }
             if pressed(Key::C) { self.tool = Tool::Clip; }
             if pressed(Key::V) { self.tool = Tool::Vertex; }
-            if pressed(Key::A) { self.tool = Tool::Texture; self.tab = RightTab::Texture; }
+            if pressed(Key::A) { self.tool = Tool::Texture; self.focus_pane = Some(Pane::Textures); }
             if pressed(Key::F) { self.frame_selection(); }
         }
         if !shift && !alt {
@@ -1205,6 +1208,18 @@ impl App {
                     self.maximized = None;
                     ui.close();
                 }
+                ui.separator();
+                for p in Pane::PANELS {
+                    let shown = self.settings.ui.dock.find_tab(&p).is_some();
+                    if ui.selectable_label(shown, p.name()).clicked() {
+                        self.settings.ui.toggle(p);
+                        ui.close();
+                    }
+                }
+                if ui.button("Reset layout").clicked() {
+                    self.reset_layout();
+                    ui.close();
+                }
             });
             ui.menu_button("Map", |ui| {
                 #[cfg(feature = "local")]
@@ -1237,6 +1252,12 @@ impl App {
                     self.cfg_sel = self.settings.active;
                     ui.close();
                 }
+                #[cfg(feature = "local")]
+                if ui.button("Editor options...").clicked() {
+                    self.win.editor_opts = true;
+                    self.steam_edit = self.settings.editor.steam_dir.clone().unwrap_or_default();
+                    ui.close();
+                }
             });
             ui.menu_button("Help", |ui| {
                 if ui.button("About").clicked() {
@@ -1247,8 +1268,8 @@ impl App {
         });
     }
 
-    fn toolbar(&mut self, ui: &mut egui::Ui) {
-        ui.horizontal_wrapped(|ui| {
+    pub fn tools_pane(&mut self, ui: &mut egui::Ui) {
+        egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
             for (t, label, tip) in [
                 (Tool::Select, "Select", "Selection tool (Shift+S)"),
                 (Tool::Block, "Block", "Block tool (Shift+B)"),
@@ -1260,16 +1281,18 @@ impl App {
                 if ui.selectable_label(self.tool == t, label).on_hover_text(tip).clicked() {
                     self.tool = t;
                     if t == Tool::Texture {
-                        self.tab = RightTab::Texture;
+                        self.focus_pane = Some(Pane::Textures);
                     }
                 }
             }
             ui.separator();
-            ui.label("Grid:");
-            egui::ComboBox::from_id_salt("grid").selected_text(format!("{}", self.grid)).width(60.0).show_ui(ui, |ui| {
-                for g in [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0] {
-                    ui.selectable_value(&mut self.grid, g, format!("{g}"));
-                }
+            ui.horizontal(|ui| {
+                ui.label("Grid:");
+                egui::ComboBox::from_id_salt("grid").selected_text(format!("{}", self.grid)).width(60.0).show_ui(ui, |ui| {
+                    for g in [1.0, 2.0, 4.0, 8.0, 16.0, 32.0, 64.0, 128.0, 256.0, 512.0] {
+                        ui.selectable_value(&mut self.grid, g, format!("{g}"));
+                    }
+                });
             });
             ui.checkbox(&mut self.snap, "Snap");
             ui.checkbox(&mut self.show_grid, "Grid");
@@ -1374,9 +1397,9 @@ impl App {
     }
 }
 
-fn load_game_data(vfs: &crate::platform::SharedVfs, vpks: &crate::assets::gamefs::VpkCache, g: Option<&GameConfig>) -> (Fgd, Materials) {
+fn load_game_data(vfs: &crate::platform::SharedVfs, vpks: &crate::assets::gamefs::VpkCache, g: Option<&GameConfig>, steam_dir: Option<&Path>) -> (Fgd, Materials) {
     let Some(g) = g else {
-        return (Fgd::default(), Materials::new(vfs.clone(), vpks, Path::new("")));
+        return (Fgd::default(), Materials::new(vfs.clone(), vpks, Path::new(""), steam_dir));
     };
     let mut fgd = Fgd::default();
     if let Some(first) = g.fgds.first() {
@@ -1398,7 +1421,7 @@ fn load_game_data(vfs: &crate::platform::SharedVfs, vpks: &crate::assets::gamefs
             fgd.names.sort_by_key(|s| s.to_ascii_lowercase());
         }
     }
-    let mats = Materials::new(vfs.clone(), vpks, &g.game_path());
+    let mats = Materials::new(vfs.clone(), vpks, &g.game_path(), steam_dir);
     (fgd, mats)
 }
 
@@ -1418,11 +1441,11 @@ impl App {
                 }
             }
             if let Ok(t) = std::env::var("RHAMMER_TAB") {
-                self.tab = match t.as_str() {
-                    "tex" => RightTab::Texture,
-                    "vis" => RightTab::Visgroups,
-                    _ => RightTab::Object,
-                };
+                self.focus_pane = Some(match t.as_str() {
+                    "tex" => Pane::Textures,
+                    "vis" => Pane::VisGroups,
+                    _ => Pane::Object,
+                });
             }
             if let Ok(id) = std::env::var("RHAMMER_PICK") {
                 if let Ok(id) = id.parse::<u32>() {
@@ -1540,10 +1563,8 @@ impl eframe::App for App {
         }
 
         egui::Panel::top("menu").show(ui, |ui| self.menu(ui));
-        egui::Panel::top("toolbar").show(ui, |ui| self.toolbar(ui));
         egui::Panel::bottom("status").show(ui, |ui| self.status_bar(ui));
-        egui::Panel::right("right").default_size(330.0).min_size(260.0).resizable(true).show(ui, |ui| self.right_panel(ui));
-        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| self.views_ui(ui));
+        egui::CentralPanel::default().frame(egui::Frame::NONE).show(ui, |ui| self.central_ui(ui));
 
         self.dialogs(&ctx);
         let _ = Align2::CENTER_CENTER;
