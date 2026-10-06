@@ -373,7 +373,7 @@ impl App {
             let scroll = ui.input(|i| i.smooth_scroll_delta.y);
             if scroll != 0.0 {
                 if flying {
-                    let m = (self.settings.editor.cam_speed * 1.25f32.powf(scroll.signum())).clamp(SPEED_RANGE.0, SPEED_RANGE.1);
+                    let m = (self.settings.editor.cam_speed * 1.1f32.powf(scroll / 50.0)).clamp(SPEED_RANGE.0, SPEED_RANGE.1);
                     self.settings.editor.cam_speed = m;
                     self.speed_shown = Some(web_time::Instant::now());
                 } else {
