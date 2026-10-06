@@ -8,6 +8,14 @@ use glam::DVec3;
 use std::collections::HashMap;
 use super::*;
 
+/// Applies a material's `$basetexturetransform` to a UV pair.
+fn xform_uv(x: Option<[f32; 6]>, uv: [f32; 2]) -> [f32; 2] {
+    match x {
+        Some([a, b, c, d, e, f]) => [a * uv[0] + b * uv[1] + c, d * uv[0] + e * uv[1] + f],
+        None => uv,
+    }
+}
+
 impl App {
     pub(crate) fn material_color(&mut self, mat: &str) -> ([f32; 4], Option<(u32, u32)>) {
         let lower = mat.to_ascii_lowercase();
@@ -250,12 +258,13 @@ impl App {
                 let (col, size) = self.material_color(&sd.material);
                 let (tw, th) = size.map(|(w, h)| (w as f64, h as f64)).unwrap_or((64.0, 64.0));
                 let n = geom::Plane::from_points(&sd.plane).map(|p| p.n).unwrap_or(DVec3::Z);
+                let xf = self.mats.xform(&sd.material);
                 let verts: Vec<Vertex> = poly
                     .iter()
                     .map(|p| {
                         let u = (p.dot(sd.uaxis.vec) / sd.uaxis.scale + sd.uaxis.shift) / tw;
                         let v = (p.dot(sd.vaxis.vec) / sd.vaxis.scale + sd.vaxis.shift) / th;
-                        Vertex { pos: [p.x as f32, p.y as f32, p.z as f32], nrm: [n.x as f32, n.y as f32, n.z as f32], uv: [u as f32, v as f32], col }
+                        Vertex { pos: [p.x as f32, p.y as f32, p.z as f32], nrm: [n.x as f32, n.y as f32, n.z as f32], uv: xform_uv(xf, [u as f32, v as f32]), col }
                     })
                     .collect();
                 let out = batches.entry(sd.material.to_ascii_lowercase()).or_default();
@@ -273,6 +282,7 @@ impl App {
                 let (col, size) = self.material_color(&f.material);
                 let (tw, th) = size.map(|(w, h)| (w as f64, h as f64)).unwrap_or((64.0, 64.0));
                 let n = f.rot * f.normal;
+                let xf = self.mats.xform(&f.material);
                 let verts: Vec<Vertex> = f
                     .local
                     .iter()
@@ -280,7 +290,7 @@ impl App {
                         let u = (p.dot(f.uaxis.vec) / f.uaxis.scale + f.uaxis.shift) / tw;
                         let v = (p.dot(f.vaxis.vec) / f.vaxis.scale + f.vaxis.shift) / th;
                         let w = f.rot * *p + f.trans;
-                        Vertex { pos: [w.x as f32, w.y as f32, w.z as f32], nrm: [n.x as f32, n.y as f32, n.z as f32], uv: [u as f32, v as f32], col }
+                        Vertex { pos: [w.x as f32, w.y as f32, w.z as f32], nrm: [n.x as f32, n.y as f32, n.z as f32], uv: xform_uv(xf, [u as f32, v as f32]), col }
                     })
                     .collect();
                 let out = batches.entry(f.material.to_ascii_lowercase()).or_default();
@@ -409,11 +419,12 @@ impl App {
             for (part, verts) in model.parts.iter().zip(lists) {
                 let mat = part.materials.get(skin).or(part.materials.first()).cloned().unwrap_or_default();
                 let (col, _) = self.material_color(&mat);
+                let xf = self.mats.xform(&mat);
                 let out = batches.entry(mat.to_ascii_lowercase()).or_default();
                 let conv = |v: &crate::assets::mdl::ModelVert| {
                     let p = origin + rot * (DVec3::new(v.pos[0] as f64, v.pos[1] as f64, v.pos[2] as f64) * scale);
                     let n = rot * DVec3::new(v.nrm[0] as f64, v.nrm[1] as f64, v.nrm[2] as f64);
-                    Vertex { pos: [p.x as f32, p.y as f32, p.z as f32], nrm: [n.x as f32, n.y as f32, n.z as f32], uv: v.uv, col }
+                    Vertex { pos: [p.x as f32, p.y as f32, p.z as f32], nrm: [n.x as f32, n.y as f32, n.z as f32], uv: xform_uv(xf, v.uv), col }
                 };
                 // Source triangles are clockwise; flip to CCW for culling
                 for tri in verts.chunks_exact(3) {
