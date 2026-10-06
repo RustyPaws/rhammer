@@ -6,6 +6,7 @@ pub mod layout;
 pub mod menu;
 pub mod model_viewer;
 pub mod props;
+pub mod sound_browser;
 pub mod options;
 pub mod tools;
 pub mod views;

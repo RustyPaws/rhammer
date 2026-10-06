@@ -17,6 +17,7 @@ impl App {
         let mut edits: Vec<Edit> = vec![];
         let mut new_conns: Option<Vec<vmf::Connection>> = None;
         let mut pick_model: Option<(String, String)> = None;
+        let mut pick_sound: Option<(String, String)> = None;
         let class_name = e.classname().to_string();
         let class = self.fgd.get(&class_name).cloned();
         let tnames = self.doc.targetnames();
@@ -71,13 +72,15 @@ impl App {
                         let mut val = e.get(&p.name).map(|s| s.to_string()).unwrap_or_else(|| p.default.clone());
                         let orig = val.clone();
                         ui.add_enabled_ui(!p.readonly, |ui| {
-                            if p.ty == "studio" {
+                            if p.ty == "studio" || p.ty == "sound" {
                                 // button first (right to left) so the text field takes exactly the
                                 // remaining width and never pushes the panel wider
                                 let w = ui.available_width() - 8.0;
                                 ui.allocate_ui_with_layout(egui::vec2(w, ui.spacing().interact_size.y), egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                    if ui.button("…").on_hover_text("Browse models").clicked() {
-                                        pick_model = Some((p.name.clone(), val.clone()));
+                                    let sound = p.ty == "sound";
+                                    if ui.button("…").on_hover_text(if sound { "Browse sounds" } else { "Browse models" }).clicked() {
+                                        let target = Some((p.name.clone(), val.clone()));
+                                        if sound { pick_sound = target } else { pick_model = target }
                                     }
                                     let tw = (ui.available_width() - 2.0).max(40.0);
                                     if ui.add(egui::TextEdit::singleline(&mut val).desired_width(tw)).changed() && val != orig {
@@ -349,6 +352,14 @@ impl App {
         if let Some(id) = goto {
             self.set_sel([id].into_iter().collect());
             return;
+        }
+
+        if let Some((key, cur)) = pick_sound {
+            let mut ids = targets.clone();
+            if is_world {
+                ids.insert(self.doc.map.world.id);
+            }
+            self.pick_sound(ids, &key, &cur);
         }
 
         if let Some((key, cur)) = pick_model {

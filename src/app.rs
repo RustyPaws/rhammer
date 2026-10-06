@@ -107,6 +107,7 @@ pub struct Windows {
     pub game_cfg: bool,
     pub editor_opts: bool,
     pub model_viewer: bool,
+    pub sound_browser: bool,
     #[cfg(feature = "local")]
     pub run_map: bool,
     #[cfg(feature = "local")]
@@ -246,6 +247,7 @@ pub struct App {
     pub anim_stamp: u64,
     pub anim_key: (u64, usize, u64, u64),
     pub mv: crate::ui::model_viewer::ModelViewer,
+    pub snd: crate::ui::sound_browser::SoundBrowser,
 }
 
 #[derive(Clone)]
@@ -374,6 +376,7 @@ impl App {
             model_starved: false,
             models_key: u64::MAX,
             mv: Default::default(),
+            snd: Default::default(),
             anim_play: false,
             anim_time: 0.0,
             anim_active: false,

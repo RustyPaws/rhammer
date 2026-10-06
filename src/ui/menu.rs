@@ -180,6 +180,11 @@ impl App {
                     self.win.model_viewer = true;
                     ui.close();
                 }
+                if ui.button("Sound browser...").clicked() {
+                    self.snd.pick = None;
+                    self.win.sound_browser = true;
+                    ui.close();
+                }
                 if ui.button("Entity I/O graph...").clicked() {
                     self.win.io_graph = true;
                     ui.close();

@@ -211,6 +211,7 @@ impl App {
         }
         self.dlg_tex(ctx);
         self.dlg_model_viewer(ctx);
+        self.dlg_sound_browser(ctx);
         self.dlg_transform(ctx);
         self.dlg_find(ctx);
         self.dlg_object_props(ctx);
