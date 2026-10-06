@@ -1,6 +1,6 @@
 //! Map compilation: vbsp -> vvis -> vrad -> copy bsp -> launch game, run on a worker thread.
 
-use crate::config::{CompileSettings, GameConfig};
+use crate::config::{GameConfig, Preset, StepKind};
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -168,22 +168,21 @@ pub fn split_args(s: &str) -> Vec<String> {
     out
 }
 
-pub fn start(game: GameConfig, cs: CompileSettings, vmf: PathBuf, on_update: impl Fn() + Send + 'static) -> CompileJob {
+pub fn start(game: GameConfig, preset: Preset, vmf: PathBuf, on_update: impl Fn() + Send + 'static) -> CompileJob {
     let (tx, rx) = channel();
     let cancel = Arc::new(AtomicBool::new(false));
     let c2 = cancel.clone();
     std::thread::spawn(move || {
-        let ok = run(&game, &cs, &vmf, &tx, &c2);
+        let ok = run(&game, &preset, &vmf, &tx, &c2);
         let _ = tx.send(Msg::Done(ok));
         on_update();
     });
     CompileJob { rx, log: vec![], running: true, ok: false, cancel }
 }
 
-fn run(game: &GameConfig, cs: &CompileSettings, vmf: &Path, tx: &Sender<Msg>, cancel: &AtomicBool) -> bool {
+fn run(game: &GameConfig, preset: &Preset, vmf: &Path, tx: &Sender<Msg>, cancel: &AtomicBool) -> bool {
     let started = std::time::Instant::now();
     let dir = vmf.parent().unwrap_or(Path::new("."));
-    let stem = vmf.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     // Valve's compilers write their log through the game's file system, which only reaches
     // folders inside the game installation (e.g. <game>/sdk_content/maps).
     let root = Path::new(&game.game_dir).parent().map(|p| p.to_path_buf());
@@ -196,49 +195,58 @@ fn run(game: &GameConfig, cs: &CompileSettings, vmf: &Path, tx: &Sender<Msg>, ca
             ));
         }
     }
-    if cs.run_bsp && !run_step("BSP", &game.bsp_exe, &game.expand(&cs.bsp_params, vmf), tx, cancel, Some(dir)) {
-        return false;
-    }
-    if cs.run_vis && !run_step("VIS", &game.vis_exe, &game.expand(&cs.vis_params, vmf), tx, cancel, Some(dir)) {
-        return false;
-    }
-    if cs.run_light && !run_step("RAD", &game.light_exe, &game.expand(&cs.light_params, vmf), tx, cancel, Some(dir)) {
-        return false;
-    }
-    let bsp_src = dir.join(format!("{stem}.bsp"));
-    let bsp_dst_dir = if game.bsp_dir.is_empty() { PathBuf::from(&game.game_dir).join("maps") } else { PathBuf::from(&game.bsp_dir) };
-    if cs.copy_to_game {
-        let _ = tx.send(Msg::Line(Level::Step, "==== Copy BSP to game ====".into()));
-        let dst = bsp_dst_dir.join(format!("{stem}.bsp"));
-        match std::fs::create_dir_all(&bsp_dst_dir).and_then(|_| std::fs::copy(&bsp_src, &dst)) {
-            Ok(_) => {
-                let _ = tx.send(Msg::Line(Level::Info, format!("{} -> {}", bsp_src.display(), dst.display())));
-            }
-            Err(e) => {
-                let _ = tx.send(Msg::Line(Level::Error, format!("Copy failed: {e}")));
-                return false;
-            }
+    let _ = tx.send(Msg::Line(Level::Step, format!("Preset: {}", preset.name)));
+    for step in preset.steps.iter().filter(|s| s.enabled) {
+        let exe = game.expand(&step.exe, vmf);
+        let args = game.expand(&step.args, vmf);
+        let ok = match step.kind {
+            StepKind::Run => run_step(&step.name, &exe, &args, tx, cancel, Some(dir)),
+            StepKind::Copy => copy_step(&step.name, &exe, &args, tx),
+            StepKind::Launch => launch_step(&step.name, &exe, &args, &game.expand("$gameexedir", vmf), tx),
+        };
+        if !ok {
+            return false;
         }
     }
-    let _ = tx.send(Msg::Line(Level::Good, format!("Compile finished in {:.1}s", started.elapsed().as_secs_f32())));
-    if cs.launch_game {
-        let _ = tx.send(Msg::Line(Level::Step, "==== Launching game ====".into()));
-        let args = game.expand(&cs.game_params, vmf);
-        let _ = tx.send(Msg::Line(Level::Info, format!("{} {args}", game.game_exe)));
-        let mut cmd = Command::new(&game.game_exe);
-        for a in split_args(&args) {
-            cmd.arg(a);
-        }
-        if !game.game_exe_dir.is_empty() {
-            cmd.current_dir(&game.game_exe_dir);
-        }
-        match cmd.spawn() {
-            Ok(_) => {}
-            Err(e) => {
-                let _ = tx.send(Msg::Line(Level::Error, format!("Cannot launch game: {e}")));
-                return false;
-            }
-        }
-    }
+    let _ = tx.send(Msg::Line(Level::Good, format!("Finished in {:.1}s", started.elapsed().as_secs_f32())));
     true
+}
+
+fn copy_step(name: &str, src: &str, dst_dir: &str, tx: &Sender<Msg>) -> bool {
+    let _ = tx.send(Msg::Line(Level::Step, format!("==== {name} ====")));
+    let src = Path::new(src);
+    let Some(file) = src.file_name() else {
+        let _ = tx.send(Msg::Line(Level::Error, format!("Nothing to copy: {src:?}")));
+        return false;
+    };
+    let dst = Path::new(dst_dir).join(file);
+    match std::fs::create_dir_all(dst_dir).and_then(|_| std::fs::copy(src, &dst)) {
+        Ok(_) => {
+            let _ = tx.send(Msg::Line(Level::Info, format!("{} -> {}", src.display(), dst.display())));
+            true
+        }
+        Err(e) => {
+            let _ = tx.send(Msg::Line(Level::Error, format!("Copy failed: {e}")));
+            false
+        }
+    }
+}
+
+fn launch_step(name: &str, exe: &str, args: &str, cwd: &str, tx: &Sender<Msg>) -> bool {
+    let _ = tx.send(Msg::Line(Level::Step, format!("==== {name} ====")));
+    let _ = tx.send(Msg::Line(Level::Info, format!("{exe} {args}")));
+    let mut cmd = Command::new(exe);
+    for a in split_args(args) {
+        cmd.arg(a);
+    }
+    if !cwd.is_empty() {
+        cmd.current_dir(cwd);
+    }
+    match cmd.spawn() {
+        Ok(_) => true,
+        Err(e) => {
+            let _ = tx.send(Msg::Line(Level::Error, format!("Cannot launch {exe}: {e}")));
+            false
+        }
+    }
 }

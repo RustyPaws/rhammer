@@ -103,8 +103,18 @@ impl GameConfig {
             .replace("$gamedir", &format!("\"{}\"", self.game_dir))
             .replace("$path", &dir)
             .replace("$file", &stem)
-            .replace("$bspdir", &self.bsp_dir)
+            .replace("$bspdir", &self.bsp_out_dir().display().to_string())
             .replace("$ext", "vmf")
+            .replace("$bsp_exe", &self.bsp_exe)
+            .replace("$vis_exe", &self.vis_exe)
+            .replace("$light_exe", &self.light_exe)
+            .replace("$game_exe", &self.game_exe)
+            .replace("$gameexedir", &self.game_exe_dir)
+    }
+
+    /// Where compiled maps are copied: `BSPDir`, or `<gamedir>/maps`.
+    pub fn bsp_out_dir(&self) -> PathBuf {
+        if self.bsp_dir.is_empty() { PathBuf::from(&self.game_dir).join("maps") } else { PathBuf::from(&self.bsp_dir) }
     }
 
     /// Directory searched for `materials/`, `models/` etc. (the `GameDir`).

@@ -51,6 +51,154 @@ fn path_row(ui: &mut egui::Ui, label: &str, val: &mut String, dir: bool, ext: &[
     ui.end_row();
 }
 
+/// Macros offered in the Run Map step editor.
+#[cfg(feature = "local")]
+const MACROS: [&str; 10] = ["$gamedir", "$path", "$file", "$ext", "$bspdir", "$bsp_exe", "$vis_exe", "$light_exe", "$game_exe", "$gameexedir"];
+
+/// The preset / step tree with its toolbar. `sel` is the selected step of the active preset
+/// (`None` = the preset itself).
+#[cfg(feature = "local")]
+fn run_map_tree(ui: &mut egui::Ui, cs: &mut crate::config::CompileSettings, sel: &mut Option<usize>) {
+    use crate::config::{Preset, Step};
+    ui.horizontal_wrapped(|ui| {
+        if ui.button("+ Preset").clicked() {
+            cs.presets.push(Preset::default());
+            cs.active = cs.presets.len() - 1;
+            *sel = None;
+        }
+        if ui.button("Duplicate").clicked() {
+            let mut p = cs.presets[cs.active].clone();
+            p.name += " copy";
+            cs.presets.push(p);
+            cs.active = cs.presets.len() - 1;
+            *sel = None;
+        }
+        if ui.add_enabled(cs.presets.len() > 1, egui::Button::new("Delete preset")).clicked() {
+            cs.presets.remove(cs.active);
+            cs.active = cs.active.min(cs.presets.len() - 1);
+            *sel = None;
+        }
+    });
+    ui.horizontal_wrapped(|ui| {
+        let steps = &mut cs.presets[cs.active].steps;
+        if ui.button("+ Step").clicked() {
+            steps.push(Step::default());
+            *sel = Some(steps.len() - 1);
+        }
+        let i = sel.filter(|i| *i < steps.len());
+        if ui.add_enabled(i.is_some(), egui::Button::new("Remove step")).clicked() {
+            steps.remove(i.unwrap());
+            *sel = None;
+        }
+        if ui.add_enabled(i.is_some_and(|i| i > 0), egui::Button::new("Up")).clicked() {
+            let i = i.unwrap();
+            steps.swap(i, i - 1);
+            *sel = Some(i - 1);
+        }
+        if ui.add_enabled(i.is_some_and(|i| i + 1 < steps.len()), egui::Button::new("Down")).clicked() {
+            let i = i.unwrap();
+            steps.swap(i, i + 1);
+            *sel = Some(i + 1);
+        }
+    });
+    ui.separator();
+    let active = cs.active;
+    let mut new_active = active;
+    let mut new_sel = *sel;
+    egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
+        for (pi, preset) in cs.presets.iter_mut().enumerate() {
+            let id = ui.make_persistent_id(("rm_preset", pi));
+            egui::collapsing_header::CollapsingState::load_with_default_open(ui.ctx(), id, true)
+                .show_header(ui, |ui| {
+                    if ui.selectable_label(pi == active && sel.is_none(), RichText::new(&preset.name).strong()).clicked() {
+                        new_active = pi;
+                        new_sel = None;
+                    }
+                })
+                .body(|ui| {
+                    for (si, step) in preset.steps.iter_mut().enumerate() {
+                        ui.horizontal(|ui| {
+                            ui.checkbox(&mut step.enabled, "");
+                            let text = if step.enabled { RichText::new(&step.name) } else { RichText::new(&step.name).weak() };
+                            if ui.selectable_label(pi == active && *sel == Some(si), text).clicked() {
+                                new_active = pi;
+                                new_sel = Some(si);
+                            }
+                        });
+                    }
+                });
+        }
+    });
+    cs.active = new_active;
+    *sel = new_sel;
+}
+
+/// A text field that fills the width, with a macro menu and an optional file / folder picker.
+#[cfg(feature = "local")]
+fn macro_field(ui: &mut egui::Ui, label: &str, text: &mut String, browse: Option<bool>) {
+    ui.label(label);
+    ui.horizontal(|ui| {
+        let w = ui.available_width() - if browse.is_some() { 90.0 } else { 56.0 };
+        ui.add(egui::TextEdit::singleline(text).desired_width(w.max(60.0)));
+        ui.menu_button("$", |ui| {
+            for m in MACROS {
+                if ui.button(m).clicked() {
+                    text.push_str(m);
+                    ui.close();
+                }
+            }
+        })
+        .response
+        .on_hover_text("insert a variable");
+        if let Some(dir) = browse {
+            if ui.button("…").clicked() {
+                let d = rfd::FileDialog::new();
+                if let Some(p) = if dir { d.pick_folder() } else { d.pick_file() } {
+                    *text = p.display().to_string();
+                }
+            }
+        }
+    });
+}
+
+/// The right side of Run Map: the active preset's name and the selected step.
+#[cfg(feature = "local")]
+fn run_map_editor(ui: &mut egui::Ui, cs: &mut crate::config::CompileSettings, sel: Option<usize>, game: &GameConfig, vmf: &std::path::Path) {
+    use crate::config::StepKind;
+    let Some(preset) = cs.presets.get_mut(cs.active) else { return };
+    ui.label("Preset name");
+    ui.add(egui::TextEdit::singleline(&mut preset.name).desired_width(f32::INFINITY));
+    ui.separator();
+    let Some(step) = sel.and_then(|i| preset.steps.get_mut(i)) else {
+        ui.label(RichText::new("Select a step to edit it. Steps run top to bottom; untick one to skip it.").weak());
+        ui.label(RichText::new(format!("Variables: {}", MACROS.join("  "))).small().weak());
+        return;
+    };
+    ui.horizontal(|ui| {
+        ui.label("Name");
+        ui.add(egui::TextEdit::singleline(&mut step.name).desired_width(200.0));
+        egui::ComboBox::from_id_salt("rm_kind").selected_text(step.kind.label()).show_ui(ui, |ui| {
+            for k in StepKind::ALL {
+                ui.selectable_value(&mut step.kind, k, k.label());
+            }
+        });
+        ui.checkbox(&mut step.enabled, "Enabled");
+    });
+    let (exe_label, args_label) = step.kind.field_labels();
+    let copy = step.kind == StepKind::Copy;
+    macro_field(ui, exe_label, &mut step.exe, Some(false));
+    macro_field(ui, args_label, &mut step.args, copy.then_some(true));
+    ui.separator();
+    ui.label(RichText::new("Command line").small().weak());
+    let line = if copy {
+        format!("copy {}  ->  {}", game.expand(&step.exe, vmf), game.expand(&step.args, vmf))
+    } else {
+        format!("{} {}", game.expand(&step.exe, vmf), game.expand(&step.args, vmf))
+    };
+    ui.add(egui::Label::new(RichText::new(line).monospace()).wrap());
+    ui.label(RichText::new(format!("Variables: {}", MACROS.join("  "))).small().weak());
+}
+
 impl App {
     pub fn dialogs(&mut self, ctx: &egui::Context) {
         self.dlg_pending(ctx);
@@ -355,49 +503,33 @@ impl App {
         }
         let mut open = true;
         let mut go = false;
-        egui::Window::new("Run Map").open(&mut open).default_width(560.0).show(ctx, |ui| {
-            let c = &mut self.settings.compile;
-            ui.label(RichText::new(format!("Configuration: {}", self.settings.games.get(self.settings.active).map(|g| g.name.as_str()).unwrap_or("none"))).weak());
-            ui.separator();
-            ui.label("Variables: $gamedir  $path  $file  $bspdir");
-            egui::Grid::new("runmap").num_columns(3).spacing([8.0, 6.0]).show(ui, |ui| {
-                ui.checkbox(&mut c.run_bsp, "BSP");
-                ui.text_edit_singleline(&mut c.bsp_params);
-                ui.end_row();
-                ui.checkbox(&mut c.run_vis, "VIS");
-                ui.text_edit_singleline(&mut c.vis_params);
-                ui.end_row();
-                ui.checkbox(&mut c.run_light, "RAD");
-                ui.text_edit_singleline(&mut c.light_params);
-                ui.end_row();
-                ui.checkbox(&mut c.launch_game, "Run game");
-                ui.text_edit_singleline(&mut c.game_params);
-                ui.end_row();
+        let mut cancel = false;
+        let vmf = self.doc.path.clone().unwrap_or_else(|| std::path::PathBuf::from("map.vmf"));
+        let game = self.game().cloned().unwrap_or_default();
+        let game_name = game.name.clone();
+        let mut sel = self.run_sel;
+        let cs = &mut self.settings.compile;
+        egui::Window::new("Run Map").open(&mut open).default_size([860.0, 480.0]).show(ctx, |ui| {
+            egui::Panel::bottom("rm_bottom").show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button(RichText::new("Go!").strong()).clicked() {
+                        go = true;
+                    }
+                    if ui.button("Close").clicked() {
+                        cancel = true;
+                    }
+                    ui.label(RichText::new(format!("runs preset \"{}\" for {}", cs.active_preset().map_or("", |p| p.name.as_str()), game_name)).weak());
+                });
             });
-            ui.checkbox(&mut c.copy_to_game, "Copy BSP to the game's maps folder");
-            ui.horizontal(|ui| {
-                if ui.button("Fast (BSP only, no VIS/RAD)").clicked() {
-                    c.run_vis = false;
-                    c.run_light = false;
-                }
-                if ui.button("Full").clicked() {
-                    c.run_bsp = true;
-                    c.run_vis = true;
-                    c.run_light = true;
-                }
+            egui::Panel::left("rm_tree").resizable(true).default_size(250.0).size_range(160.0..=500.0).show(ui, |ui| {
+                run_map_tree(ui, cs, &mut sel);
             });
-            ui.separator();
-            ui.horizontal(|ui| {
-                if ui.button(RichText::new("Go!").strong()).clicked() {
-                    go = true;
-                }
-                if ui.button("Cancel").clicked() {
-                    self.win.run_map = false;
-                }
-            });
+            run_map_editor(ui, cs, sel, &game, &vmf);
         });
-        if !open {
+        self.run_sel = sel;
+        if !open || cancel {
             self.win.run_map = false;
+            self.settings.save();
         }
         if go {
             self.run_map();

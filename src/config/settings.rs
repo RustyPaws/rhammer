@@ -97,6 +97,7 @@ impl Settings {
         if st.games.is_empty() {
             st.auto_detect();
         }
+        st.compile.normalize();
         if st.active >= st.games.len() {
             st.active = 0;
         }

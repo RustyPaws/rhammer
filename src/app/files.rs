@@ -223,9 +223,13 @@ impl App {
             self.status = "No game configured".into();
             return;
         };
+        let Some(preset) = self.settings.compile.active_preset().cloned() else {
+            self.status = "No Run Map preset".into();
+            return;
+        };
         self.settings.save();
         let ctx = self.ctx.clone();
-        self.compile = Some(crate::compile::start(g, self.settings.compile.clone(), p, move || ctx.request_repaint()));
+        self.compile = Some(crate::compile::start(g, preset, p, move || ctx.request_repaint()));
         self.win.compile_log = true;
         self.win.run_map = false;
     }

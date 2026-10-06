@@ -202,6 +202,8 @@ pub struct App {
     pub compile: Option<CompileJob>,
     pub tex_filter: String,
     pub cfg_sel: usize,
+    /// Selected step of the active Run Map preset (`None` = the preset itself).
+    pub run_sel: Option<usize>,
     /// Draft of `settings.editor.steam_dir` while the Editor options window is open.
     pub steam_edit: String,
     pub hover_world: Option<DVec3>,
@@ -342,6 +344,7 @@ impl App {
             compile: None,
             tex_filter: String::new(),
             cfg_sel: 0,
+            run_sel: None,
             steam_edit: String::new(),
             hover_world: None,
             view_busy: false,
