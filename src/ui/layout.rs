@@ -42,6 +42,8 @@ pub struct UiLayout {
     pub view_kinds: [usize; 4],
     /// Position of the shared splitters of the 2x2 grid (x, y), as fractions.
     pub grid_split: [f32; 2],
+    /// Width of the key column in Object Properties, as a fraction of the pane.
+    pub prop_label_frac: f32,
 }
 
 impl Default for UiLayout {
@@ -52,7 +54,7 @@ impl Default for UiLayout {
         let [views, _] = tree.split_right(NodeIndex::root(), 0.78, vec![Pane::Textures, Pane::VisGroups]);
         let [views, _] = tree.split_left(views, 0.04, vec![Pane::Tools]);
         tree.split_above(views, 0.1, vec![Pane::Options]);
-        UiLayout { dock, view_kinds: [0, 1, 2, 3], grid_split: [0.5, 0.5] }
+        UiLayout { dock, view_kinds: [0, 1, 2, 3], grid_split: [0.5, 0.5], prop_label_frac: 0.4 }
     }
 }
 
@@ -64,7 +66,7 @@ impl UiLayout {
 
     /// Everything that is worth saving, without the per-frame screen rects.
     fn signature(&self) -> String {
-        let mut s = format!("{:?}{:?}", self.view_kinds, self.grid_split);
+        let mut s = format!("{:?}{:?}{:.3}", self.view_kinds, self.grid_split, self.prop_label_frac);
         for (_, node) in self.dock.iter_all_nodes() {
             match node {
                 Node::Leaf(l) => s += &format!("|{:?}@{}", l.tabs, l.active.0),

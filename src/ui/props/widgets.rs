@@ -161,18 +161,11 @@ pub(crate) fn prop_editor(ui: &mut egui::Ui, prop: &Prop, value: &mut String, ta
         }
         "target_destination" | "target_source" | "target_name_or_class" => {
             ui.horizontal(|ui| {
-                changed |= ui.add(egui::TextEdit::singleline(value).desired_width(ui.available_width() - 28.0)).changed();
-                ui.menu_button("v", |ui| {
-                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                        for t in targets {
-                            if ui.button(t).clicked() {
-                                *value = t.clone();
-                                changed = true;
-                                ui.close();
-                            }
-                        }
-                    });
-                });
+                changed |= autocomplete_edit(ui, &format!("target_{}", prop.name), value, "", targets, ui.available_width() - 28.0);
+                if let Some(t) = pick_list_button(ui, &prop.name, targets) {
+                    *value = t;
+                    changed = true;
+                }
             });
         }
         _ => {
@@ -180,4 +173,122 @@ pub(crate) fn prop_editor(ui: &mut egui::Ui, prop: &Prop, value: &mut String, ta
         }
     }
     changed
+}
+
+/// A text field that suggests matching `items` (substring, case-insensitive) while it has focus.
+/// Up / Down move the highlight, Enter or a click picks, Esc closes. Returns true when the value
+/// changed.
+pub(crate) fn autocomplete_edit(ui: &mut egui::Ui, id_salt: &str, value: &mut String, hint: &str, items: &[String], width: f32) -> bool {
+    const ROWS: usize = 40;
+    let id = ui.make_persistent_id(id_salt);
+    let (open_id, sel_id, dismiss_id) = (id.with("open"), id.with("sel"), id.with("dismissed"));
+    let was_open = ui.data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+    let mut sel = ui.data(|d| d.get_temp::<usize>(sel_id)).unwrap_or(0);
+    let mut dismissed = ui.data(|d| d.get_temp::<bool>(dismiss_id)).unwrap_or(false);
+    let suggestions = |text: &str| -> Vec<&String> {
+        let f = text.to_ascii_lowercase();
+        let m: Vec<&String> = items.iter().filter(|n| name_matches(&f, n)).take(ROWS).collect();
+        // the field already holds exactly the only suggestion: nothing left to suggest
+        if m.len() == 1 && m[0].eq_ignore_ascii_case(text) { vec![] } else { m }
+    };
+    let mut picked: Option<String> = None;
+    let mut moved = false;
+    if was_open && !dismissed {
+        let m = suggestions(value);
+        if !m.is_empty() {
+            sel = sel.min(m.len() - 1);
+            let (down, up, enter, esc) = ui.input_mut(|i| {
+                (
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowDown),
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::ArrowUp),
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::Enter),
+                    i.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
+                )
+            });
+            if down {
+                sel = (sel + 1) % m.len();
+                moved = true;
+            }
+            if up {
+                sel = (sel + m.len() - 1) % m.len();
+                moved = true;
+            }
+            if enter {
+                picked = Some(m[sel].clone());
+            }
+            if esc {
+                dismissed = true;
+            }
+        }
+    }
+    let resp = ui.add(egui::TextEdit::singleline(value).id(id).hint_text(hint).desired_width(width));
+    let mut changed = resp.changed();
+    if changed {
+        dismissed = false;
+        sel = 0;
+    }
+    let m: Vec<String> = suggestions(value).into_iter().cloned().collect();
+    let show = resp.has_focus() && !dismissed && !m.is_empty() && picked.is_none();
+    if show {
+        sel = sel.min(m.len() - 1);
+        egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(resp.rect.left_bottom()).show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.set_min_width(resp.rect.width().max(120.0));
+                egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
+                    for (i, n) in m.iter().enumerate() {
+                        let r = ui.selectable_label(i == sel, n);
+                        if i == sel && moved {
+                            r.scroll_to_me(None);
+                        }
+                        // picked on press: the click would otherwise take the focus (and the list) away first
+                        if r.hovered() && ui.input(|i| i.pointer.primary_pressed()) {
+                            picked = Some(n.clone());
+                        }
+                    }
+                });
+            });
+        });
+    }
+    if let Some(p) = picked {
+        *value = p;
+        changed = true;
+        dismissed = true;
+    }
+    ui.data_mut(|d| {
+        d.insert_temp(open_id, show);
+        d.insert_temp(sel_id, sel);
+        d.insert_temp(dismiss_id, dismissed);
+    });
+    changed
+}
+
+/// A small "v" button opening a filterable list of `items`. Returns the one clicked.
+pub(crate) fn pick_list_button(ui: &mut egui::Ui, id_salt: &str, items: &[String]) -> Option<String> {
+    let mut picked = None;
+    ui.menu_button("v", |ui| {
+        let fid = ui.id().with(("filter", id_salt));
+        let mut f: String = ui.data_mut(|d| d.get_temp(fid).unwrap_or_default());
+        let edit = ui.add(egui::TextEdit::singleline(&mut f).hint_text("filter…"));
+        if ui.memory(|m| m.focused().is_none()) {
+            edit.request_focus();
+        }
+        let fl = f.to_ascii_lowercase();
+        let matched: Vec<&String> = items.iter().filter(|n| name_matches(&fl, n)).collect();
+        if edit.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            if let Some(n) = matched.first() {
+                picked = Some((*n).clone());
+                ui.close();
+            }
+        }
+        egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
+            for n in matched {
+                if ui.button(n).clicked() {
+                    picked = Some(n.clone());
+                    ui.close();
+                }
+            }
+        });
+        ui.data_mut(|d| d.insert_temp(fid, f));
+    });
+    picked
 }

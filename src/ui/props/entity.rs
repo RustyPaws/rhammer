@@ -5,7 +5,7 @@ use crate::formats::fgd::ClassKind;
 use crate::formats::vmf::{self, Entity};
 use eframe::egui::{self, Color32, RichText};
 use super::*;
-use super::widgets::{filter_combo, prop_editor};
+use super::widgets::{autocomplete_edit, filter_combo, pick_list_button, prop_editor};
 
 pub(crate) enum Edit {
     Set(String, String),
@@ -49,11 +49,12 @@ impl App {
         if tab == ObjTab::Properties {
             let mut shown: Vec<String> = vec!["classname".into(), "spawnflags".into()];
             // long FGD names are cut short (the full name is in the tooltip) so values keep their room
-            let label_w = (ui.available_width() * 0.4).clamp(60.0, 160.0);
+            let full_w = ui.available_width();
+            let label_w = (full_w * self.settings.ui.prop_label_frac).clamp(60.0, (full_w - 60.0).max(60.0));
             // the value column is capped to the visible width: Grid otherwise keeps last frame's
             // widest cell, and one wide editor would stretch every text field past the edge
             let value_w = (ui.available_width() - label_w - 8.0).max(60.0);
-            egui::Grid::new("props").num_columns(2).spacing([8.0, 4.0]).max_col_width(label_w.max(value_w)).striped(true).show(ui, |ui| {
+            let grid = egui::Grid::new("props").num_columns(2).spacing([8.0, 4.0]).max_col_width(label_w.max(value_w)).striped(true).show(ui, |ui| {
                 if let Some(c) = &class {
                     for p in &c.props {
                         if p.name.eq_ignore_ascii_case("classname") || p.name.eq_ignore_ascii_case("spawnflags") || p.ty == "void" {
@@ -109,6 +110,16 @@ impl App {
                     ui.end_row();
                 }
             });
+            // draggable divider between the key and value columns, remembered in the layout
+            let gr = grid.response.rect;
+            let bar = egui::Rect::from_min_max(egui::pos2(gr.left() + label_w + 1.0, gr.top()), egui::pos2(gr.left() + label_w + 7.0, gr.bottom()));
+            let handle = ui.interact(bar, ui.id().with("prop_divider"), egui::Sense::drag()).on_hover_cursor(egui::CursorIcon::ResizeHorizontal);
+            if let Some(p) = handle.interact_pointer_pos().filter(|_| handle.dragged()) {
+                self.settings.ui.prop_label_frac = ((p.x - gr.left() - 3.0) / full_w).clamp(0.15, 0.75);
+            }
+            if handle.hovered() || handle.dragged() {
+                ui.painter().vline(bar.center().x, gr.y_range(), egui::Stroke::new(1.5, ui.visuals().widgets.hovered.fg_stroke.color));
+            }
             ui.horizontal(|ui| {
                 let id = ui.id().with("newkey");
                 let mut kv: (String, String) = ui.data_mut(|d| d.get_temp(id).unwrap_or_default());
@@ -249,33 +260,21 @@ impl App {
                                 if ui.small_button("X").on_hover_text("remove output").clicked() {
                                     remove = Some(i);
                                 }
-                                ui.menu_button("v", |ui| {
-                                    for o in outs {
-                                        if ui.button(&o).clicked() {
-                                            c.output = o;
-                                            changed = true;
-                                            ui.close();
-                                        }
-                                    }
-                                });
-                                fill_rest(ui, |ui| changed |= ui.add(egui::TextEdit::singleline(&mut c.output).desired_width(ui.available_width())).changed());
+                                if let Some(o) = pick_list_button(ui, &format!("out_{i}"), &outs) {
+                                    c.output = o;
+                                    changed = true;
+                                }
+                                fill_rest(ui, |ui| changed |= autocomplete_edit(ui, &format!("out_when_{i}"), &mut c.output, "output", &outs, ui.available_width()));
                             });
                         });
                         ui.horizontal(|ui| {
                             ui.label("fires");
                             trailing(ui, |ui| {
-                                ui.menu_button("v", |ui| {
-                                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                                        for t in &tnames {
-                                            if ui.button(t).clicked() {
-                                                c.target = t.clone();
-                                                changed = true;
-                                                ui.close();
-                                            }
-                                        }
-                                    });
-                                });
-                                fill_rest(ui, |ui| changed |= ui.add(egui::TextEdit::singleline(&mut c.target).hint_text("target").desired_width(ui.available_width())).changed());
+                                if let Some(t) = pick_list_button(ui, &format!("tgt_{i}"), &tnames) {
+                                    c.target = t;
+                                    changed = true;
+                                }
+                                fill_rest(ui, |ui| changed |= autocomplete_edit(ui, &format!("out_target_{i}"), &mut c.target, "target", &tnames, ui.available_width()));
                             });
                         });
                         ui.horizontal(|ui| {
@@ -287,18 +286,11 @@ impl App {
                                 .map(|c| c.inputs.iter().map(|i| i.name.clone()).collect())
                                 .unwrap_or_else(|| vec!["Kill".into(), "Enable".into(), "Disable".into(), "Toggle".into(), "Trigger".into(), "Open".into(), "Close".into()]);
                             trailing(ui, |ui| {
-                                ui.menu_button("v", |ui| {
-                                    egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
-                                        for inp in inputs {
-                                            if ui.button(&inp).clicked() {
-                                                c.input = inp;
-                                                changed = true;
-                                                ui.close();
-                                            }
-                                        }
-                                    });
-                                });
-                                fill_rest(ui, |ui| changed |= ui.add(egui::TextEdit::singleline(&mut c.input).desired_width(ui.available_width())).changed());
+                                if let Some(inp) = pick_list_button(ui, &format!("inp_{i}"), &inputs) {
+                                    c.input = inp;
+                                    changed = true;
+                                }
+                                fill_rest(ui, |ui| changed |= autocomplete_edit(ui, &format!("out_input_{i}"), &mut c.input, "input", &inputs, ui.available_width()));
                             });
                         });
                         // wraps on a narrow panel instead of cutting "once" off
@@ -306,9 +298,19 @@ impl App {
                             ui.label("param");
                             changed |= ui.add(egui::TextEdit::singleline(&mut c.param).desired_width((ui.available_width() - 8.0).clamp(40.0, 120.0))).changed();
                             changed |= ui.add(egui::DragValue::new(&mut c.delay).prefix("delay ").speed(0.05).range(0.0..=3600.0)).changed();
-                            let mut once = c.times == 1;
-                            if ui.checkbox(&mut once, "once").changed() {
-                                c.times = if once { 1 } else { -1 };
+                            // -1 = unlimited, 1 = once, N = exactly N times
+                            let prev = c.times;
+                            let times = egui::DragValue::new(&mut c.times)
+                                .range(-1..=9999)
+                                .speed(0.2)
+                                .prefix("times ")
+                                .custom_formatter(|n, _| if n < 1.0 { "unlimited".to_string() } else { format!("{n:.0}") })
+                                .custom_parser(|t| t.trim().parse::<f64>().ok().or_else(|| t.trim().to_ascii_lowercase().starts_with("un").then_some(-1.0)));
+                            if ui.add(times).on_hover_text("times to fire: -1 = unlimited, 1 = once").changed() {
+                                // 0 is not a valid count: step over it in the direction of the drag
+                                if c.times == 0 {
+                                    c.times = if prev < 0 { 1 } else { -1 };
+                                }
                                 changed = true;
                             }
                         });
@@ -438,8 +440,10 @@ impl App {
                 if c.delay > 0.0 {
                     what += &format!(" after {}s", vmf::fmt(c.delay));
                 }
-                if c.times == 1 {
-                    what += " once";
+                match c.times {
+                    1 => what += " once",
+                    n if n > 1 => what += &format!(" \u{d7}{n}"),
+                    _ => {}
                 }
                 ui.add(egui::Label::new(what).wrap());
             });
