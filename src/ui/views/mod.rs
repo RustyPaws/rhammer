@@ -11,7 +11,6 @@ pub use vertex::VertexState;
 use crate::app::*;
 use eframe::egui::{self, Color32, Pos2, Rect, Stroke, Vec2};
 
-pub(crate) const SEL_COLOR: Color32 = Color32::from_rgb(255, 64, 64);
 
 #[derive(Clone, Copy)]
 pub(crate) struct Proj {

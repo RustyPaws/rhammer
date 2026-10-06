@@ -6,6 +6,7 @@ use eframe::egui::{self, Color32, Pos2, Rect, Sense, Stroke, Vec2};
 use glam::{DQuat, DVec3};
 use super::*;
 use crate::editor::direction::entity_direction;
+use crate::config::View2dStyle;
 
 /// One orthographic view for the current frame: which view it is, its screen projection and
 /// the world axes it shows (`ua` right, `va` up, `wa` into the screen).
@@ -16,13 +17,26 @@ struct View2d {
     ua: usize,
     va: usize,
     wa: usize,
+    style: View2dStyle,
 }
 
 impl View2d {
     fn new(app: &App, rect: Rect, vi: usize) -> View2d {
         let (ua, va, wa) = axes(vi);
         let v = app.views[vi];
-        View2d { vi, rect, pr: Proj { rect, center: v.center, zoom: v.zoom }, ua, va, wa }
+        View2d { vi, rect, pr: Proj { rect, center: v.center, zoom: v.zoom }, ua, va, wa, style: app.settings.editor.view2d.clone() }
+    }
+
+    fn sel_color(&self) -> Color32 {
+        let [r, g, b] = self.style.sel_color;
+        Color32::from_rgb(r, g, b)
+    }
+
+    /// A grid line color scaled by the user's grid brightness.
+    fn grid_color(&self, base: [u8; 3]) -> Color32 {
+        let k = self.style.grid_brightness;
+        let f = |v: u8| (v as f32 * k).round().clamp(0.0, 255.0) as u8;
+        Color32::from_rgb(f(base[0]), f(base[1]), f(base[2]))
     }
 
     fn screen(&self, p: DVec3) -> Pos2 {
@@ -206,7 +220,7 @@ impl App {
 
         // ---- drawing ----
         let painter = ui.painter_at(rect);
-        painter.rect_filled(rect, 0.0, Color32::from_rgb(16, 16, 20));
+        painter.rect_filled(rect, 0.0, Color32::from_rgb(c.style.background[0], c.style.background[1], c.style.background[2]));
         if self.show_grid {
             self.draw_grid_2d(&painter, &c);
         }
@@ -328,15 +342,15 @@ impl App {
                 y += step;
             }
         };
-        draw_lines(step, Color32::from_rgb(30, 30, 38));
+        draw_lines(step, c.grid_color([24, 24, 30]));
         let mut big = 64.0;
         while big < step {
             big *= 2.0;
         }
         if big * pr.zoom >= 8.0 {
-            draw_lines(big, Color32::from_rgb(46, 46, 60));
+            draw_lines(big, c.grid_color([40, 40, 54]));
         }
-        draw_lines(1024.0, Color32::from_rgb(70, 70, 40));
+        draw_lines(1024.0, c.grid_color([70, 70, 40]));
         // axes
         let o = pr.to_screen(0.0, 0.0);
         painter.line_segment([Pos2::new(o.x, rect.top()), Pos2::new(o.x, rect.bottom())], Stroke::new(1.0, Color32::from_rgb(40, 90, 40)));
@@ -349,7 +363,8 @@ impl App {
         let (ua, va) = (c.ua, c.va);
         let mut shapes: Vec<egui::Shape> = Vec::new();
         let sel_dim = Color32::from_rgb(190, 190, 200);
-        let draw_solid = |shapes: &mut Vec<egui::Shape>, polys: &[Vec<DVec3>], color: Color32, xf: Option<&Xform>| {
+        let sel = c.sel_color();
+        let draw_solid = |shapes: &mut Vec<egui::Shape>, polys: &[Vec<DVec3>], color: Color32, width: f32, xf: Option<&Xform>| {
             for poly in polys {
                 if poly.len() < 2 {
                     continue;
@@ -365,7 +380,7 @@ impl App {
                 if area.abs() < 1.0 {
                     continue;
                 }
-                let stroke = Stroke::new(1.0, color);
+                let stroke = Stroke::new(width, color);
                 for i in 0..pts.len() {
                     shapes.push(egui::Shape::line_segment([pts[i], pts[(i + 1) % pts.len()]], stroke));
                 }
@@ -393,7 +408,8 @@ impl App {
                 None => continue,
             };
             let preview = if selected { xf } else { None };
-            let color = if selected { SEL_COLOR } else { color };
+            let color = if selected { sel } else { color };
+            let width = if selected { c.style.sel_width } else { 1.0 };
             if is_point {
                 let e = ent.unwrap();
                 let (a, b) = self.doc.ent_bounds(e, &self.fgd);
@@ -405,7 +421,7 @@ impl App {
                 let r = if r.width() < 4.0 { Rect::from_center_size(r.center(), Vec2::splat(4.0)) } else { r };
                 if let Some(ig) = self.inst.get(&id) {
                     // instance: draw its contents, only outline the bounds
-                    let line = if selected { SEL_COLOR } else { Color32::from_rgb(120, 130, 160) };
+                    let line = if selected { sel } else { Color32::from_rgb(120, 130, 160) };
                     if std::env::var("RHAMMER_DEBUG").is_ok() && c.vi == 0 {
                         for (fi, poly) in ig.polys.iter().enumerate() {
                             let le = (0..poly.len()).map(|i| (poly[i] - poly[(i + 1) % poly.len()]).length()).fold(0.0, f64::max);
@@ -414,19 +430,21 @@ impl App {
                             }
                         }
                     }
-                    draw_solid(&mut shapes, &ig.polys, line, preview);
-                    painter.rect_stroke(r, 0.0, Stroke::new(1.0, color.linear_multiply(0.6)), egui::StrokeKind::Inside);
+                    draw_solid(&mut shapes, &ig.polys, line, width, preview);
+                    painter.rect_stroke(r, 0.0, Stroke::new(width, color.linear_multiply(0.6)), egui::StrokeKind::Inside);
                 } else if let Some(Some(tex)) = crate::editor::doc::entity_sprite(e, &self.fgd).and_then(|s| self.sprite_tex.get(&s)) {
                     // icon sprite: at least 16px, keep the box outline for selection / hit feedback
                     let side = r.width().max(r.height()).max(16.0);
                     let ir = Rect::from_center_size(r.center(), Vec2::splat(side));
                     painter.image(tex.id(), ir, Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(1.0, 1.0)), Color32::WHITE);
                     if selected {
-                        painter.rect_stroke(ir, 0.0, Stroke::new(1.0, color), egui::StrokeKind::Inside);
+                        painter.rect_stroke(ir, 0.0, Stroke::new(width, color), egui::StrokeKind::Inside);
                     }
                 } else {
-                    painter.rect_filled(r, 0.0, color.linear_multiply(0.35));
-                    painter.rect_stroke(r, 0.0, Stroke::new(1.0, color), egui::StrokeKind::Inside);
+                    if c.style.fill_point_entities {
+                        painter.rect_filled(r, 0.0, color.linear_multiply(0.35));
+                    }
+                    painter.rect_stroke(r, 0.0, Stroke::new(width, color), egui::StrokeKind::Inside);
                 }
                 // facing direction
                 if selected && !self.inst.contains_key(&id) {
@@ -449,7 +467,7 @@ impl App {
                     if !c.in_view(a, b) {
                         continue;
                     }
-                    draw_solid(&mut shapes, &g.polys, color, preview);
+                    draw_solid(&mut shapes, &g.polys, color, width, preview);
                 }
                 // brush entity direction (door move direction, push direction …)
                 if let Some((e, f)) = ent.filter(|_| selected).and_then(|e| entity_direction(e, &self.fgd).map(|f| (e, f))) {
@@ -492,15 +510,19 @@ impl App {
             }
             overlays::draw_origin_marker(painter, c.screen(o), Color32::from_rgb(80, 220, 255));
         }
-        if let (Tool::Select, Some(b)) = (self.tool, sel_b) {
+        if let Some(b) = sel_b {
             let b = match xf {
                 Some(Xform::Rotate { .. }) | None => b,
                 Some(_) => xform_box(xf, b.0, b.1),
             };
-            draw_handles(painter, c, b, Color32::from_rgb(255, 220, 80), self.rot_mode);
+            if self.tool == Tool::Select {
+                draw_handles(painter, c, b, c.sel_color(), self.rot_mode);
+            } else {
+                // other tools: a thin box so the selection is still easy to find
+                painter.rect_stroke(c.screen_box(b), 0.0, Stroke::new(1.0, c.sel_color().linear_multiply(0.6)), egui::StrokeKind::Outside);
+            }
         }
         if let (Tool::Block, Some(b)) = (self.tool, self.block) {
-            painter.rect_filled(c.screen_box(b), 0.0, Color32::from_rgba_unmultiplied(255, 255, 0, 20));
             draw_handles(painter, c, b, Color32::YELLOW, false);
         }
         if self.tool == Tool::Vertex {
@@ -513,7 +535,6 @@ impl App {
         if let Some(Drag::BoxSel { view: v, start, cur }) = &self.drag {
             if *v == vi {
                 let r = Rect::from_two_pos(c.pr.to_screen(start.0, start.1), c.pr.to_screen(cur.0, cur.1));
-                painter.rect_filled(r, 0.0, Color32::from_rgba_unmultiplied(120, 160, 255, 30));
                 painter.rect_stroke(r, 0.0, Stroke::new(1.0, Color32::from_rgb(120, 160, 255)), egui::StrokeKind::Inside);
             }
         }
