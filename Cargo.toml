@@ -34,7 +34,7 @@ web-sys = { version = "0.3", optional = true, features = ["Window", "Document", 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 eframe = { version = "0.36.2", default-features = false, features = ["x11", "wayland"] }
 # sound preview in the sound browser (wav incl. ADPCM, mp3)
-rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-wav", "symphonia-mp3"] }
+rodio = { version = "0.21", default-features = false, features = ["playback", "symphonia-wav", "symphonia-adpcm", "symphonia-mp3"] }
 
 [profile.dev]
 opt-level = 2
