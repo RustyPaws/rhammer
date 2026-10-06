@@ -191,7 +191,6 @@ impl App {
                     self.cfg_sel = self.settings.active;
                     ui.close();
                 }
-                #[cfg(feature = "local")]
                 if ui.button("Editor options...").clicked() {
                     self.win.editor_opts = true;
                     self.steam_edit = self.settings.editor.steam_dir.clone().unwrap_or_default();

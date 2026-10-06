@@ -215,6 +215,7 @@ impl App {
     pub fn central_ui(&mut self, ui: &mut egui::Ui) {
         self.hover_world = None;
         self.view_busy = false;
+        self.freelook_drawn = false;
         self.prepare_scene();
         if let Some(p) = self.focus_pane.take() {
             self.settings.ui.focus(p);
@@ -228,6 +229,10 @@ impl App {
         DockArea::new(&mut dock).style(style).show_add_buttons(false).show_leaf_collapse_buttons(false).show_leaf_close_all_buttons(false).show_inside(ui, &mut Tabs { app: self });
         self.settings.ui.dock = dock;
         self.save_layout_on_release(ui.ctx());
+        if self.freelook && !self.freelook_drawn {
+            let ctx = ui.ctx().clone();
+            self.set_freelook(&ctx, false);
+        }
     }
 
     /// Persists the layout once a splitter / tab drag ends and the layout actually changed.

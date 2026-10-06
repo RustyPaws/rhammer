@@ -55,9 +55,9 @@ impl App {
     pub fn dialogs(&mut self, ctx: &egui::Context) {
         self.dlg_pending(ctx);
         self.dlg_game_cfg(ctx);
+        self.dlg_editor_opts(ctx);
         #[cfg(feature = "local")]
         {
-            self.dlg_editor_opts(ctx);
             self.dlg_run_map(ctx);
             self.dlg_compile_log(ctx);
         }
@@ -99,7 +99,6 @@ impl App {
         }
     }
 
-    #[cfg(feature = "local")]
     fn dlg_editor_opts(&mut self, ctx: &egui::Context) {
         if !self.win.editor_opts {
             return;
@@ -107,15 +106,43 @@ impl App {
         let mut open = true;
         let mut apply = false;
         egui::Window::new("Editor options").open(&mut open).collapsible(false).default_width(520.0).show(ctx, |ui| {
-            ui.label(RichText::new("Steam").strong());
-            egui::Grid::new("editor_opts_grid").num_columns(1).show(ui, |ui| {
-                path_row(ui, "Steam folder (contains steamapps)", &mut self.steam_edit, true, &[]);
+            #[cfg(feature = "local")]
+            {
+                ui.label(RichText::new("Steam").strong());
+                egui::Grid::new("editor_opts_grid").num_columns(1).show(ui, |ui| {
+                    path_row(ui, "Steam folder (contains steamapps)", &mut self.steam_edit, true, &[]);
+                });
+                ui.label("Forces this Steam folder when resolving |appid_<id>| search paths. Leave empty to search the default Steam locations.");
+                ui.separator();
+                ui.checkbox(&mut self.settings.editor.restore_last_map, "Reopen the last map on startup (otherwise only after a crash)");
+                ui.separator();
+            }
+            let ed = &mut self.settings.editor;
+            ui.label(RichText::new("3D view").strong());
+            ui.checkbox(&mut ed.z_freelook, "Z toggles mouse-look (locked cursor + WASD); Shift+Z maximizes. Off: Z maximizes");
+            ui.horizontal(|ui| {
+                ui.label("Fly speed");
+                ui.add(egui::DragValue::new(&mut ed.cam_speed).range(0.25..=10.0).speed(0.05).suffix("x"));
+                ui.label(RichText::new("(mouse wheel while flying)").weak());
             });
-            ui.label(
-                "Forces this Steam folder when resolving |appid_<id>| search paths.                  Leave empty to search the default Steam locations.",
-            );
             ui.separator();
-            ui.checkbox(&mut self.settings.editor.restore_last_map, "Reopen the last map on startup (otherwise only after a crash)");
+            ui.label(RichText::new("2D views").strong());
+            let v = &mut ed.view2d;
+            egui::Grid::new("opts_2d").num_columns(2).show(ui, |ui| {
+                ui.label("Selection color");
+                ui.color_edit_button_srgb(&mut v.sel_color);
+                ui.end_row();
+                ui.label("Selection outline width");
+                ui.add(egui::DragValue::new(&mut v.sel_width).range(1.0..=6.0).speed(0.1));
+                ui.end_row();
+                ui.label("Background");
+                ui.color_edit_button_srgb(&mut v.background);
+                ui.end_row();
+                ui.label("Grid brightness");
+                ui.add(egui::DragValue::new(&mut v.grid_brightness).range(0.0..=3.0).speed(0.02));
+                ui.end_row();
+            });
+            ui.checkbox(&mut v.fill_point_entities, "Fill point entity boxes");
             ui.separator();
             ui.horizontal(|ui| {
                 if ui.button("OK / Apply").clicked() {
@@ -131,8 +158,11 @@ impl App {
             self.win.editor_opts = false;
         }
         if apply {
-            let dir = self.steam_edit.trim();
-            self.settings.editor.steam_dir = (!dir.is_empty()).then(|| dir.to_string());
+            #[cfg(feature = "local")]
+            {
+                let dir = self.steam_edit.trim();
+                self.settings.editor.steam_dir = (!dir.is_empty()).then(|| dir.to_string());
+            }
             self.settings.save();
             self.reload_game_data();
             self.status = "Editor options applied".into();

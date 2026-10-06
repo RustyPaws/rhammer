@@ -66,7 +66,6 @@ pub struct ClipState {
 #[derive(Default)]
 pub struct Windows {
     pub game_cfg: bool,
-    #[cfg(feature = "local")]
     pub editor_opts: bool,
     pub model_viewer: bool,
     #[cfg(feature = "local")]
@@ -149,6 +148,12 @@ pub struct App {
     pub clipboard: Clipboard,
     pub status: String,
     pub maximized: Option<usize>,
+    /// Mouse-look is on (cursor locked) in the 3D view.
+    pub freelook: bool,
+    /// The 3D view was drawn this frame (freelook ends when it is not).
+    pub freelook_drawn: bool,
+    /// When the fly speed last changed, for the on-screen readout.
+    pub speed_shown: Option<web_time::Instant>,
     /// Pane to bring to the front on the next frame (e.g. Textures when the Texture tool is picked).
     pub focus_pane: Option<Pane>,
     /// Serialized layout last written to disk.
@@ -288,6 +293,9 @@ impl App {
             clipboard: Clipboard::default(),
             status: "Ready".into(),
             maximized: None,
+            freelook: false,
+            freelook_drawn: false,
+            speed_shown: None,
             focus_pane: None,
             layout_saved: String::new(),
             win: Windows::default(),

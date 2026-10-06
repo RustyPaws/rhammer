@@ -6,8 +6,8 @@ use eframe::egui::{self, Key};
 
 impl App {
     pub(crate) fn handle_keys(&mut self, ctx: &egui::Context) {
-        if ctx.egui_wants_keyboard_input() || ctx.input(|i| i.pointer.secondary_down()) {
-            return; // typing, or flying the 3D camera with RMB held
+        if self.freelook || ctx.egui_wants_keyboard_input() || ctx.input(|i| i.pointer.secondary_down()) {
+            return; // typing, or flying the 3D camera (RMB held / freelook)
         }
         let (ctrl, shift, alt) = ctx.input(|i| (i.modifiers.command, i.modifiers.shift, i.modifiers.alt));
         let pressed = |k: Key| ctx.input(|i| i.key_pressed(k));

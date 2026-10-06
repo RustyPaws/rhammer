@@ -272,10 +272,7 @@ impl App {
         }
         resp.context_menu(|ui| self.view_context_menu(ui));
 
-        // maximize toggle
-        if hover.is_some() && !ui.ctx().egui_wants_keyboard_input() && ui.input(|i| i.key_pressed(egui::Key::Z) && !i.modifiers.command) {
-            self.maximized = if self.maximized.is_some() { None } else { Some(vi + 1) };
-        }
+        self.view_hotkeys(ui, hover.is_some(), vi + 1);
     }
 
     /// Wheel zoom around the cursor, middle / right drag pans. Also reports the hovered world point.

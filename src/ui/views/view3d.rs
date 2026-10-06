@@ -98,50 +98,7 @@ impl App {
         let hovered = resp.hovered();
         let aspect = rect.width() / rect.height().max(1.0);
 
-        // ---- camera control ----
-        let rmb = ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
-        let looking = resp.dragged_by(egui::PointerButton::Secondary) || (rmb && hovered);
-        self.view_busy |= looking || resp.dragged();
-        if looking {
-            let d = ui.input(|i| i.pointer.delta());
-            self.cam.yaw -= d.x as f64 * 0.25;
-            self.cam.pitch = (self.cam.pitch - d.y as f64 * 0.25).clamp(-89.0, 89.0);
-        }
-        if resp.dragged_by(egui::PointerButton::Middle) {
-            let d = resp.drag_delta();
-            let r = self.cam.right();
-            self.cam.pos -= r * d.x as f64 * 1.5;
-            self.cam.pos += DVec3::Z * d.y as f64 * 1.5;
-        }
-        if hovered || looking {
-            let dt = ui.input(|i| i.stable_dt).min(0.1) as f64;
-            let speed = if ui.input(|i| i.modifiers.shift) { 1600.0 } else { 500.0 };
-            let (mut f, mut r, mut up) = (0.0, 0.0, 0.0);
-            // letters only fly while RMB is held (otherwise they are tool hotkeys); arrows always work
-            ui.input(|i| {
-                let k = |key: egui::Key| rmb && i.key_down(key);
-                if k(egui::Key::W) || i.key_down(egui::Key::ArrowUp) { f += 1.0; }
-                if k(egui::Key::S) || i.key_down(egui::Key::ArrowDown) { f -= 1.0; }
-                if k(egui::Key::D) || i.key_down(egui::Key::ArrowRight) { r += 1.0; }
-                if k(egui::Key::A) || i.key_down(egui::Key::ArrowLeft) { r -= 1.0; }
-                if k(egui::Key::E) || k(egui::Key::Space) { up += 1.0; }
-                if k(egui::Key::Q) || k(egui::Key::C) { up -= 1.0; }
-            });
-            let typing = ui.ctx().egui_wants_keyboard_input() || ui.input(|i| i.modifiers.command);
-            if !typing && (f != 0.0 || r != 0.0 || up != 0.0) {
-                let fwd = self.cam.forward();
-                let rt = self.cam.right();
-                self.cam.pos += (fwd * f + rt * r + DVec3::Z * up) * speed * dt;
-                ui.ctx().request_repaint();
-            }
-            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
-            if scroll != 0.0 {
-                self.cam.pos += self.cam.forward() * scroll as f64 * 2.0;
-            }
-            if looking {
-                ui.ctx().request_repaint();
-            }
-        }
+        self.view3d_navigate(ui, &resp, hovered);
 
         // ---- picking ----
         let ctrl = ui.input(|i| i.modifiers.command);
@@ -310,8 +267,126 @@ impl App {
             };
             self.vertex_draw(&ui.painter_at(rect), &project, delta);
         }
-        if hovered && ui.input(|i| i.key_pressed(egui::Key::Z) && !i.modifiers.command) && !ui.ctx().egui_wants_keyboard_input() {
-            self.maximized = if self.maximized.is_some() { None } else { Some(0) };
+        self.freelook_drawn = true;
+        self.view_hotkeys(ui, hovered || self.freelook, 0);
+        self.speed_overlay(ui, rect);
+    }
+}
+
+const FLY_SPEED: f64 = 500.0;
+const SPEED_RANGE: (f32, f32) = (0.25, 10.0);
+
+impl App {
+    /// Grab or release the cursor for mouse-look.
+    pub(crate) fn set_freelook(&mut self, ctx: &egui::Context, on: bool) {
+        if self.freelook == on {
+            return;
         }
+        self.freelook = on;
+        if on {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::Locked));
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(false));
+        } else {
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorGrab(egui::CursorGrab::None));
+            ctx.send_viewport_cmd(egui::ViewportCommand::CursorVisible(true));
+        }
+    }
+
+    /// Z / Shift+Z in a view: Z starts mouse-look in the 3D view (when enabled) and otherwise
+    /// maximizes the view; Shift+Z always maximizes. `kind` is 0 for 3D, 1..=3 for the ortho views.
+    pub(crate) fn view_hotkeys(&mut self, ui: &egui::Ui, active: bool, kind: usize) {
+        if !active || ui.ctx().egui_wants_keyboard_input() || !ui.input(|i| i.key_pressed(egui::Key::Z) && !i.modifiers.command) {
+            return;
+        }
+        let shift = ui.input(|i| i.modifiers.shift);
+        if kind == 0 && self.settings.editor.z_freelook && !shift {
+            let on = !self.freelook;
+            self.set_freelook(ui.ctx(), on);
+        } else {
+            self.maximized = if self.maximized.is_some() { None } else { Some(kind) };
+        }
+    }
+
+    /// Camera control: RMB / freelook mouse-look, MMB pan, WASD fly, wheel (dolly, or fly speed
+    /// while flying).
+    fn view3d_navigate(&mut self, ui: &egui::Ui, resp: &egui::Response, hovered: bool) {
+        let rmb = ui.input(|i| i.pointer.button_down(egui::PointerButton::Secondary));
+        if self.freelook && ui.input(|i| i.key_pressed(egui::Key::Escape) || i.viewport().focused == Some(false)) {
+            self.set_freelook(ui.ctx(), false);
+        }
+        let free = self.freelook;
+        let looking = free || resp.dragged_by(egui::PointerButton::Secondary) || (rmb && hovered);
+        self.view_busy |= looking || resp.dragged();
+        if looking {
+            // raw motion keeps working while the cursor is locked
+            let d = if free {
+                ui.input(|i| i.events.iter().map(|e| if let egui::Event::MouseMoved(d) = e { *d } else { egui::Vec2::ZERO }).fold(egui::Vec2::ZERO, |a, b| a + b))
+            } else {
+                ui.input(|i| i.pointer.delta())
+            };
+            self.cam.yaw -= d.x as f64 * 0.25;
+            self.cam.pitch = (self.cam.pitch - d.y as f64 * 0.25).clamp(-89.0, 89.0);
+        }
+        if resp.dragged_by(egui::PointerButton::Middle) {
+            let d = resp.drag_delta();
+            let r = self.cam.right();
+            self.cam.pos -= r * d.x as f64 * 1.5;
+            self.cam.pos += DVec3::Z * d.y as f64 * 1.5;
+        }
+        if hovered || looking {
+            let flying = rmb || free;
+            let dt = ui.input(|i| i.stable_dt).min(0.1) as f64;
+            let mult = self.settings.editor.cam_speed as f64;
+            let speed = FLY_SPEED * mult * if ui.input(|i| i.modifiers.shift) { 3.2 } else { 1.0 };
+            let (mut f, mut r, mut up) = (0.0, 0.0, 0.0);
+            // letters only fly while RMB is held or in freelook (otherwise they are tool hotkeys); arrows always work
+            ui.input(|i| {
+                let k = |key: egui::Key| flying && i.key_down(key);
+                if k(egui::Key::W) || i.key_down(egui::Key::ArrowUp) { f += 1.0; }
+                if k(egui::Key::S) || i.key_down(egui::Key::ArrowDown) { f -= 1.0; }
+                if k(egui::Key::D) || i.key_down(egui::Key::ArrowRight) { r += 1.0; }
+                if k(egui::Key::A) || i.key_down(egui::Key::ArrowLeft) { r -= 1.0; }
+                if k(egui::Key::E) || k(egui::Key::Space) { up += 1.0; }
+                if k(egui::Key::Q) || k(egui::Key::C) { up -= 1.0; }
+            });
+            let typing = ui.ctx().egui_wants_keyboard_input() || ui.input(|i| i.modifiers.command);
+            if !typing && (f != 0.0 || r != 0.0 || up != 0.0) {
+                let fwd = self.cam.forward();
+                let rt = self.cam.right();
+                self.cam.pos += (fwd * f + rt * r + DVec3::Z * up) * speed * dt;
+                ui.ctx().request_repaint();
+            }
+            let scroll = ui.input(|i| i.smooth_scroll_delta.y);
+            if scroll != 0.0 {
+                if flying {
+                    let m = (self.settings.editor.cam_speed * 1.25f32.powf(scroll.signum())).clamp(SPEED_RANGE.0, SPEED_RANGE.1);
+                    self.settings.editor.cam_speed = m;
+                    self.speed_shown = Some(web_time::Instant::now());
+                } else {
+                    self.cam.pos += self.cam.forward() * scroll as f64 * 2.0;
+                }
+            }
+            if looking {
+                ui.ctx().request_repaint();
+            }
+        }
+    }
+
+    /// Briefly shows the fly speed after the wheel changed it; saves it once the overlay fades.
+    fn speed_overlay(&mut self, ui: &egui::Ui, rect: Rect) {
+        let Some(t) = self.speed_shown else { return };
+        if t.elapsed().as_secs_f32() > 1.5 {
+            self.speed_shown = None;
+            self.settings.save();
+            return;
+        }
+        ui.painter_at(rect).text(
+            rect.right_top() + egui::vec2(-10.0, 10.0),
+            egui::Align2::RIGHT_TOP,
+            format!("Speed {:.2}x", self.settings.editor.cam_speed),
+            egui::FontId::proportional(16.0),
+            Color32::WHITE,
+        );
+        ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
     }
 }
