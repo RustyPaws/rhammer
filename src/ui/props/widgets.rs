@@ -159,7 +159,11 @@ pub(crate) fn prop_editor(ui: &mut egui::Ui, prop: &Prop, value: &mut String, ta
                 changed = true;
             }
         }
-        "target_destination" | "target_source" | "target_name_or_class" => {
+        // a name being given (target_source) has nothing useful to suggest: only references autocomplete
+        "target_source" => {
+            changed |= ui.add(egui::TextEdit::singleline(value).desired_width(ui.available_width() - 8.0)).changed();
+        }
+        "target_destination" | "target_name_or_class" => {
             ui.horizontal(|ui| {
                 changed |= autocomplete_edit(ui, &format!("target_{}", prop.name), value, "", targets, ui.available_width() - 28.0);
                 if let Some(t) = pick_list_button(ui, &prop.name, targets) {
@@ -231,9 +235,11 @@ pub(crate) fn autocomplete_edit(ui: &mut egui::Ui, id_salt: &str, value: &mut St
     let show = resp.has_focus() && !dismissed && !m.is_empty() && picked.is_none();
     if show {
         sel = sel.min(m.len() - 1);
-        egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(resp.rect.left_bottom()).show(ui.ctx(), |ui| {
+        // no fade-in and a width that doesn't follow the field's every pixel: both made the list blink
+        let list_w = (resp.rect.width() / 8.0).round() * 8.0;
+        egui::Area::new(id.with("area")).order(egui::Order::Foreground).fixed_pos(resp.rect.left_bottom()).fade_in(false).show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_min_width(resp.rect.width().max(120.0));
+                ui.set_min_width(list_w.max(120.0));
                 egui::ScrollArea::vertical().max_height(220.0).show(ui, |ui| {
                     for (i, n) in m.iter().enumerate() {
                         let r = ui.selectable_label(i == sel, n);
