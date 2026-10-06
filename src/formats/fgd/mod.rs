@@ -404,11 +404,14 @@ fn parse_class(p: &mut P, kind: ClassKind) -> Option<EntityClass> {
                 if p.sym('(') {
                     prop.ty = strs(&p.paren_args()).join("").to_ascii_lowercase();
                 }
-                if let Some(T::Id(r)) = p.peek() {
+                // modifiers between the type and the first colon; `report` only marks the key for Hammer's object list
+                while let Some(T::Id(r)) = p.peek() {
                     if r.eq_ignore_ascii_case("readonly") {
                         prop.readonly = true;
-                        p.i += 1;
+                    } else if !r.eq_ignore_ascii_case("report") {
+                        break;
                     }
+                    p.i += 1;
                 }
                 if p.sym(':') {
                     prop.display = p.string().unwrap_or_default();
@@ -472,4 +475,20 @@ fn parse_class(p: &mut P, kind: ClassKind) -> Option<EntityClass> {
         }
     }
     Some(c)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn report_modifier_keeps_the_key_and_display() {
+        let path = std::env::temp_dir().join("rhammer_report_test.fgd");
+        std::fs::write(&path, "@PointClass = ambient_generic : \"x\" [ message(sound) report : \"Sound Name\" : \"\" : \"help\" health(integer) : \"Volume\" : 10 ]").unwrap();
+        let fgd = Fgd::load(&crate::platform::LocalFs, &path);
+        let _ = std::fs::remove_file(&path);
+        let c = fgd.get("ambient_generic").unwrap();
+        assert_eq!(c.props.len(), 2);
+        assert_eq!((c.props[0].name.as_str(), c.props[0].ty.as_str(), c.props[0].display.as_str()), ("message", "sound", "Sound Name"));
+    }
 }
