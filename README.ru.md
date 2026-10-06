@@ -34,7 +34,7 @@
 | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` / `Ctrl+D` | Вырезать / Копировать / Вставить / Дублировать |
 | `Ctrl+A` / `Ctrl+F` | Выделить всё / Найти |
 | `Ctrl+M` / `Ctrl+H` / `Ctrl+T` | Трансформация / Сделать полым / Привязать к сущности |
-| `Shift+S` / `Shift+B` / `Shift+E` / `Shift+C` / `Shift+V` / `Shift+A` | Инструменты: Select / Block / Entity / Clip / Vertex / Texture |
+| `Shift+S` / `Shift+B` / `Shift+E` / `Shift+X` / `Shift+V` / `Shift+A` | Инструменты: Select / Block / Entity / Clip / Vertex / Texture |
 | `Ctrl+F` (Vertex) | Слить выбранные вершины |
 | `Shift+F` | Фокус на выделении |
 | `Enter` | Подтвердить блок / отсечение |

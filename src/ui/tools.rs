@@ -34,7 +34,7 @@ impl Tool {
             Tool::Select => Key::S,
             Tool::Block => Key::B,
             Tool::Entity => Key::E,
-            Tool::Clip => Key::C,
+            Tool::Clip => Key::X,
             Tool::Vertex => Key::V,
             Tool::Texture => Key::A,
         }

@@ -157,10 +157,11 @@ impl App {
         }
     }
 
-    pub fn commit_clip(&mut self) {
-        let (Some(p0), Some(p1)) = (self.clip.p0, self.clip.p1) else { return };
+    /// The clip plane of the line drawn in a view; its normal is the "front" side.
+    pub fn clip_plane(&self) -> Option<Plane> {
+        let (p0, p1) = (self.clip.p0?, self.clip.p1?);
         if (p0.0 - p1.0).abs() < 1e-6 && (p0.1 - p1.1).abs() < 1e-6 {
-            return;
+            return None;
         }
         let (ua, va, wa) = axes(self.clip.view);
         let mut a = DVec3::ZERO;
@@ -174,15 +175,35 @@ impl App {
         // normal perpendicular to the line within the view plane
         let n = (b - a).cross(wdir);
         if n.length() < 1e-9 {
-            return;
+            return None;
         }
         let n = n.normalize();
-        let pl = Plane { n, d: n.dot(a) };
-        let (kf, kb) = match self.clip.mode {
-            1 => (true, false),
-            2 => (false, true),
-            _ => (true, true),
-        };
+        Some(Plane { n, d: n.dot(a) })
+    }
+
+    /// What the clip would produce for the selected brushes: the pieces' faces and whether
+    /// each piece stays (white) or is removed (red) in the current mode.
+    pub fn clip_preview(&self) -> Vec<(Vec<Vec<DVec3>>, bool)> {
+        let Some(pl) = self.clip_plane() else { return vec![] };
+        let (kf, kb) = self.clip.mode.keeps();
+        let mut next = self.doc.next_id;
+        let mut out = vec![];
+        for id in &self.sel {
+            for s in self.doc.solids_of(*id) {
+                let (front, back) = crate::editor::geom::clip_solid(s, &pl, "", &mut next);
+                for (piece, keep) in [(front, kf), (back, kb)] {
+                    if let Some(p) = piece {
+                        out.push((crate::editor::geom::SolidGeo::build(&p).polys, keep));
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    pub fn commit_clip(&mut self) {
+        let Some(pl) = self.clip_plane() else { return };
+        let (kf, kb) = self.clip.mode.keeps();
         self.doc.checkpoint();
         let s = self.sel.clone();
         let mat = self.cur_mat.clone();

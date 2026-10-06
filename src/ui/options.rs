@@ -1,6 +1,6 @@
 //! The Options pane (grid / snap and the active tool's settings) and the status bar.
 
-use crate::app::{App, Tool};
+use crate::app::{App, ClipMode, Tool};
 use crate::editor::geom::Primitive;
 #[cfg(feature = "local")]
 use eframe::egui::Color32;
@@ -47,9 +47,10 @@ impl App {
                     ui.label(RichText::new("click in a view to place").weak());
                 }
                 Tool::Clip => {
-                    for (i, n) in ["Keep both", "Keep front", "Keep back"].iter().enumerate() {
-                        ui.radio_value(&mut self.clip.mode, i as u8, *n);
+                    for m in ClipMode::ALL {
+                        ui.radio_value(&mut self.clip.mode, m, m.label());
                     }
+                    ui.label(RichText::new("Shift+X cycles - white stays, red is removed").weak());
                     if ui.add_enabled(self.clip.p0.is_some() && self.clip.p1.is_some(), egui::Button::new("Apply (Enter)")).clicked() {
                         self.commit_clip();
                     }

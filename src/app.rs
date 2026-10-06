@@ -54,13 +54,52 @@ pub enum Drag {
     Vertex { view: usize, plane: [usize; 2], start: DVec3, grab: DVec3, delta: DVec3 },
 }
 
+/// Which pieces of a clipped brush stay (white in the preview) or go (red).
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+pub enum ClipMode {
+    /// Split the brush, keep both pieces.
+    #[default]
+    Both,
+    /// Keep the side the arrow points to.
+    KeepFront,
+    KeepBack,
+}
+
+impl ClipMode {
+    pub const ALL: [ClipMode; 3] = [ClipMode::Both, ClipMode::KeepFront, ClipMode::KeepBack];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            ClipMode::Both => "Split (keep both)",
+            ClipMode::KeepFront => "Keep front, remove back",
+            ClipMode::KeepBack => "Keep back, remove front",
+        }
+    }
+
+    pub fn next(self) -> ClipMode {
+        match self {
+            ClipMode::Both => ClipMode::KeepFront,
+            ClipMode::KeepFront => ClipMode::KeepBack,
+            ClipMode::KeepBack => ClipMode::Both,
+        }
+    }
+
+    /// (keep front, keep back)
+    pub fn keeps(self) -> (bool, bool) {
+        match self {
+            ClipMode::Both => (true, true),
+            ClipMode::KeepFront => (true, false),
+            ClipMode::KeepBack => (false, true),
+        }
+    }
+}
+
 #[derive(Default)]
 pub struct ClipState {
     pub view: usize,
     pub p0: Option<(f64, f64)>,
     pub p1: Option<(f64, f64)>,
-    /// 0 = keep both, 1 = keep front, 2 = keep back
-    pub mode: u8,
+    pub mode: ClipMode,
 }
 
 #[derive(Default)]

@@ -260,6 +260,20 @@ impl App {
                 }
             }
         }
+        if self.tool == Tool::Clip {
+            let painter = ui.painter_at(rect);
+            let to_screen = |p: DVec3| self.cam.project(aspect, p).map(|p| Pos2::new(rect.left() + (p.0 * 0.5 + 0.5) * rect.width(), rect.top() + (0.5 - p.1 * 0.5) * rect.height()));
+            for (polys, keep) in self.clip_preview() {
+                let color = if keep { Color32::WHITE } else { Color32::from_rgb(255, 40, 40) };
+                for poly in &polys {
+                    for i in 0..poly.len() {
+                        if let (Some(a), Some(b)) = (to_screen(poly[i]), to_screen(poly[(i + 1) % poly.len()])) {
+                            painter.line_segment([a, b], Stroke::new(1.5, color));
+                        }
+                    }
+                }
+            }
+        }
         if self.tool == Tool::Vertex {
             let delta = match &self.drag {
                 Some(Drag::Vertex { view: 3, delta, .. }) => Some(*delta),

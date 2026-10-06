@@ -72,7 +72,12 @@ impl App {
         }
         if shift {
             if let Some(t) = Tool::ALL.into_iter().find(|t| pressed(t.shortcut())) {
-                self.set_tool(t);
+                if t == Tool::Clip && self.tool == Tool::Clip {
+                    // Shift+X again cycles what the clip tool keeps
+                    self.clip.mode = self.clip.mode.next();
+                } else {
+                    self.set_tool(t);
+                }
             }
             if pressed(Key::F) { self.frame_selection(); }
         }

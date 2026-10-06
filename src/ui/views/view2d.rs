@@ -540,6 +540,14 @@ impl App {
         }
         if self.tool == Tool::Clip && self.clip.view == vi {
             if let (Some(p0), Some(p1)) = (self.clip.p0, self.clip.p1) {
+                for (polys, keep) in self.clip_preview() {
+                    let color = if keep { Color32::WHITE } else { Color32::from_rgb(255, 40, 40) };
+                    for poly in &polys {
+                        for i in 0..poly.len() {
+                            painter.line_segment([c.screen(poly[i]), c.screen(poly[(i + 1) % poly.len()])], Stroke::new(1.5, color));
+                        }
+                    }
+                }
                 let a = c.pr.to_screen(p0.0, p0.1);
                 let b = c.pr.to_screen(p1.0, p1.1);
                 let dir = (b - a).normalized();

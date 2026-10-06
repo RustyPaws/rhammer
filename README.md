@@ -34,7 +34,7 @@
 | `Ctrl+X` / `Ctrl+C` / `Ctrl+V` / `Ctrl+D` | Cut / Copy / Paste / Duplicate |
 | `Ctrl+A` / `Ctrl+F` | Select all / Find |
 | `Ctrl+M` / `Ctrl+H` / `Ctrl+T` | Transform / Make hollow / Tie to entity |
-| `Shift+S` / `Shift+B` / `Shift+E` / `Shift+C` / `Shift+V` / `Shift+A` | Select / Block / Entity / Clip / Vertex / Texture tool |
+| `Shift+S` / `Shift+B` / `Shift+E` / `Shift+X` / `Shift+V` / `Shift+A` | Select / Block / Entity / Clip / Vertex / Texture tool |
 | `Ctrl+F` (Vertex tool) | Merge selected vertices |
 | `Shift+F` | Frame selection |
 | `Enter` | Commit block / clip |
