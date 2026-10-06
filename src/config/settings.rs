@@ -10,13 +10,41 @@ use std::path::Path;
 use std::path::PathBuf;
 
 /// General editor options (Options > Editor options).
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+/// Look of the 2D views (Options > Editor options).
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct View2dStyle {
+    pub sel_color: [u8; 3],
+    pub sel_width: f32,
+    pub fill_point_entities: bool,
+    pub background: [u8; 3],
+    pub grid_brightness: f32,
+}
+
+impl Default for View2dStyle {
+    fn default() -> Self {
+        View2dStyle { sel_color: [255, 0, 0], sel_width: 2.0, fill_point_entities: false, background: [0, 0, 0], grid_brightness: 1.0 }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EditorOptions {
     /// Steam folder (the one containing `steamapps`). When set it is used instead of the default search locations.
     pub steam_dir: Option<String>,
     /// Reopen the last map on every start, not only after a crash.
     pub restore_last_map: bool,
+    /// Z toggles mouse-look in the 3D view (otherwise Z maximizes it).
+    pub z_freelook: bool,
+    /// Camera fly speed multiplier (0.25..=10).
+    pub cam_speed: f32,
+    pub view2d: View2dStyle,
+}
+
+impl Default for EditorOptions {
+    fn default() -> Self {
+        EditorOptions { steam_dir: None, restore_last_map: false, z_freelook: true, cam_speed: 1.0, view2d: View2dStyle::default() }
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]

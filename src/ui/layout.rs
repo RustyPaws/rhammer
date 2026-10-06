@@ -160,6 +160,11 @@ impl App {
         const MIN: f32 = 0.1;
         let full = ui.available_rect_before_wrap();
         ui.allocate_rect(full, Sense::hover());
+        // a maximized view fills this pane only; the other panels stay visible
+        if let Some(kind) = self.maximized {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(full).id_salt("maximized"), |ui| self.viewport_ui(ui, kind));
+            return;
+        }
         let [mut fx, mut fy] = self.settings.ui.grid_split;
         let sx = full.left() + full.width() * fx;
         let sy = full.top() + full.height() * fy;
@@ -211,11 +216,6 @@ impl App {
         self.hover_world = None;
         self.view_busy = false;
         self.prepare_scene();
-        if let Some(kind) = self.maximized {
-            let full = ui.available_rect_before_wrap();
-            ui.scope_builder(egui::UiBuilder::new().max_rect(full), |ui| self.viewport_ui(ui, kind));
-            return;
-        }
         if let Some(p) = self.focus_pane.take() {
             self.settings.ui.focus(p);
         }
